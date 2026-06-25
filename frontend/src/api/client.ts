@@ -1,12 +1,22 @@
 import axios from "axios";
 
 import type {
+  AttributionRequest,
+  AttributionResponse,
   BacktestRequest,
   BacktestResponse,
+  BenchmarkRequest,
+  BenchmarkResponse,
   HealthResponse,
+  RegimeSplitRequest,
+  RegimeSplitResponse,
+  StatsRequest,
+  StatsResponse,
   StrategyInfo,
   SweepRequest,
   SweepResponse,
+  WalkForwardRequest,
+  WalkForwardResponse,
 } from "./types";
 
 const BASE_URL =
@@ -40,5 +50,38 @@ export async function runBacktest(req: BacktestRequest): Promise<BacktestRespons
 
 export async function runSweep(req: SweepRequest): Promise<SweepResponse> {
   const { data } = await http.post<SweepResponse>("/sweep", req);
+  return data;
+}
+
+export async function runBenchmarks(
+  req: BenchmarkRequest,
+): Promise<BenchmarkResponse> {
+  const { data } = await http.post<BenchmarkResponse>("/benchmarks", req);
+  return data;
+}
+
+export async function runStats(req: StatsRequest): Promise<StatsResponse> {
+  const { data } = await http.post<StatsResponse>("/stats", req);
+  return data;
+}
+
+export async function runWalkforward(
+  req: WalkForwardRequest,
+): Promise<WalkForwardResponse> {
+  const { data } = await http.post<WalkForwardResponse>("/walkforward", req);
+  return data;
+}
+
+export async function runAttribution(
+  req: AttributionRequest,
+): Promise<AttributionResponse> {
+  const { data } = await http.post<AttributionResponse>("/attribution", req);
+  return data;
+}
+
+export async function runRegimesSplit(
+  req: RegimeSplitRequest,
+): Promise<RegimeSplitResponse> {
+  const { data } = await http.post<RegimeSplitResponse>("/regimes/split", req);
   return data;
 }
