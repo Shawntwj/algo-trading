@@ -88,7 +88,7 @@ class DriftRegimeSingha(Strategy):
     # ─── core signal -------------------------------------------------------
     def generate_signals(self, data: pd.DataFrame) -> Signals:
         close: pd.DataFrame = data["close"]
-        rets = close.pct_change()
+        rets = close.pct_change(fill_method=None)
 
         # value: cross-sectional percentile of inverse price (paper §2.1).
         inv_price = 1.0 / close.replace(0, np.nan)
@@ -96,7 +96,7 @@ class DriftRegimeSingha(Strategy):
 
         # reversal: cross-sectional z-score of -trailing-10d return.
         rev_window = int(self.params["reversal_window"])
-        trailing = close.pct_change(rev_window)
+        trailing = close.pct_change(rev_window, fill_method=None)
         contrarian = -trailing
         # cross-sectional z-score per timestamp.
         row_mu = contrarian.mean(axis=1)

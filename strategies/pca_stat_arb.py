@@ -77,7 +77,7 @@ class PCAStatArb(Strategy):
     # ─── core signal -------------------------------------------------------
     def generate_signals(self, data: pd.DataFrame) -> Signals:
         close: pd.DataFrame = data["close"].copy()
-        rets = close.pct_change().fillna(0.0)
+        rets = close.pct_change(fill_method=None).fillna(0.0)
         n_bars, n_tickers = rets.shape
 
         # Per paper §3.1 we need at least n_factors + a few names to keep
