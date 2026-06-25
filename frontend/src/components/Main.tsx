@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import type { RunResult, SelectedTrade } from "../App";
 import type { RegimeSplitRequest } from "../api/types";
 import EquityChart from "./EquityChart";
+import ExplainTab from "./ExplainTab";
 import MetricsTable from "./MetricsTable";
 import OOSDecayChart from "./OOSDecayChart";
 import PriceChart from "./PriceChart";
@@ -17,7 +18,13 @@ interface MainProps {
   onSelectTrade: (t: SelectedTrade | null) => void;
 }
 
-type TabKey = "backtest" | "sweep" | "regimes" | "significance" | "walkforward";
+type TabKey =
+  | "backtest"
+  | "sweep"
+  | "regimes"
+  | "significance"
+  | "walkforward"
+  | "explain";
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: "backtest", label: "Backtest" },
@@ -25,6 +32,7 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   { key: "regimes", label: "Regimes" },
   { key: "significance", label: "Significance" },
   { key: "walkforward", label: "Walk-forward" },
+  { key: "explain", label: "Explain" },
 ];
 
 function fmtPct(v: unknown): string {
@@ -95,19 +103,31 @@ export default function Main({ lastResult, selectedTrade, onSelectTrade }: MainP
       </h1>
 
       <div className="border-b border-slate-200 mb-4 flex gap-1">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`px-3 py-1.5 text-sm border-b-2 -mb-px transition-colors ${
-              tab === t.key
-                ? "border-indigo-600 text-indigo-700 font-medium"
-                : "border-transparent text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+        {TABS.map((t) => {
+          // The Explain tab is only meaningful after a combined_explainable
+          // run lands — disable it otherwise so the user isn't tempted to
+          // click into an empty state.
+          const disabled = t.key === "explain" && !explainable;
+          return (
+            <button
+              key={t.key}
+              onClick={() => !disabled && setTab(t.key)}
+              disabled={disabled}
+              className={`px-3 py-1.5 text-sm border-b-2 -mb-px transition-colors ${
+                tab === t.key
+                  ? "border-indigo-600 text-indigo-700 font-medium"
+                  : "border-transparent text-slate-500 hover:text-slate-700"
+              } ${disabled ? "opacity-40 cursor-not-allowed" : ""}`}
+              title={
+                disabled
+                  ? "Run combined_explainable to enable per-trade explanations"
+                  : undefined
+              }
+            >
+              {t.label}
+            </button>
+          );
+        })}
       </div>
 
       {!lastResult && (
@@ -234,6 +254,23 @@ export default function Main({ lastResult, selectedTrade, onSelectTrade }: MainP
             Walk-forward
           </h2>
           <OOSDecayChart lastResult={lastResult} />
+        </section>
+      )}
+
+      {tab === "explain" && (
+        <section>
+          <h2 className="text-sm font-medium text-slate-700 mb-2">
+            Trade explanations
+          </h2>
+          <ExplainTab
+            explanations={
+              lastResult?.mode === "single"
+                ? lastResult.explanations
+                : undefined
+            }
+            selectedTrade={selectedTrade}
+            onSelectTrade={onSelectTrade}
+          />
         </section>
       )}
     </main>
