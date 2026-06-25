@@ -8,6 +8,8 @@ from .walkforward import (
     FoldResult,
     WalkForwardConfig,
     aggregate_walkforward,
+    fit_combined_weights_walk_forward,
+    fit_sharpe_max_weights,
     walk_forward,
 )
 from .attribution import child_signal_attribution, market_attribution
@@ -30,6 +32,8 @@ __all__ = [
     "FoldResult",
     "WalkForwardConfig",
     "aggregate_walkforward",
+    "fit_combined_weights_walk_forward",
+    "fit_sharpe_max_weights",
     "walk_forward",
     "child_signal_attribution",
     "market_attribution",

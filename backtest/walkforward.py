@@ -324,3 +324,212 @@ def aggregate_walkforward(
         "decay_slope": slope,
         "n_folds": int(len(folds)),
     }
+
+
+# ─── OOS weight learner (Task 4a) ──────────────────────────────────────────
+def _inverse_vol_weights(child_returns: dict[str, np.ndarray]) -> dict[str, float]:
+    """Inverse-volatility weights, normalised to sum to 1.
+
+    Used as the fallback when ``scipy.optimize.minimize`` fails to converge
+    on the Sharpe-max convex problem (per BRIEF Task 4a spec). A child whose
+    return series is all-zero (e.g. the strategy never traded on that fold)
+    is given zero weight.
+    """
+    names = list(child_returns.keys())
+    vols = np.array([float(np.std(child_returns[n], ddof=1)) for n in names])
+    # Zero-vol children get zero weight; non-zero share the rest by 1/σ.
+    inv = np.where(vols > 0, 1.0 / np.maximum(vols, 1e-12), 0.0)
+    s = float(inv.sum())
+    if s <= 0:
+        # All children are dead; degenerate uniform fallback.
+        return {n: 1.0 / len(names) for n in names}
+    return {n: float(v / s) for n, v in zip(names, inv)}
+
+
+def fit_sharpe_max_weights(
+    child_returns: dict[str, np.ndarray],
+    periods_per_year: int = 252,
+) -> tuple[dict[str, float], bool]:
+    """Fit convex-combination Sharpe-maximising weights.
+
+    Solves: maximise Sharpe(Σ w_i * r_i)  s.t.  Σ w_i = 1, w_i ≥ 0.
+
+    Returns
+    -------
+    (weights, used_fallback) : the per-child weight dict (sums to 1) and a
+        flag set to True when scipy.optimize failed to converge and we fell
+        back to inverse-vol weights. The caller (strategy) reads the flag
+        and surfaces it in the explanation summary.
+    """
+    from scipy.optimize import minimize  # local import (heavy, only on fit)
+
+    names = list(child_returns.keys())
+    n = len(names)
+    if n == 0:
+        raise ValueError("child_returns must contain at least one child")
+    # Stack into (T, n) matrix; reject if any series has different length.
+    lengths = {n_: child_returns[n_].size for n_ in names}
+    if len(set(lengths.values())) != 1:
+        raise ValueError(
+            f"child_returns series have mismatched lengths: {lengths}"
+        )
+    R = np.column_stack([child_returns[n_] for n_ in names]).astype(float)
+
+    # Reject pathological all-zero / all-NaN frames immediately → fallback.
+    if not np.isfinite(R).all() or float(np.std(R)) <= 0:
+        return _inverse_vol_weights(child_returns), True
+
+    def neg_sharpe(w: np.ndarray) -> float:
+        port = R @ w
+        mu = port.mean()
+        sd = port.std(ddof=1)
+        if not np.isfinite(sd) or sd <= 1e-12:
+            return 1e6  # huge penalty — scipy treats this as a bad point
+        sr = (mu / sd) * np.sqrt(periods_per_year)
+        return -float(sr)
+
+    # x0 = equal weights; bounds [0, 1]; equality constraint sum(w) = 1.
+    x0 = np.full(n, 1.0 / n)
+    bounds = [(0.0, 1.0)] * n
+    constraints = ({"type": "eq", "fun": lambda w: float(np.sum(w) - 1.0)},)
+    try:
+        result = minimize(
+            neg_sharpe,
+            x0=x0,
+            method="SLSQP",
+            bounds=bounds,
+            constraints=constraints,
+            options={"maxiter": 200, "ftol": 1e-9},
+        )
+    except Exception:
+        return _inverse_vol_weights(child_returns), True
+    if not result.success or not np.all(np.isfinite(result.x)):
+        return _inverse_vol_weights(child_returns), True
+    w = np.clip(result.x, 0.0, None)
+    s = float(w.sum())
+    if s <= 0:
+        return _inverse_vol_weights(child_returns), True
+    w = w / s
+    return ({n_: float(w[i]) for i, n_ in enumerate(names)}, False)
+
+
+def fit_combined_weights_walk_forward(
+    strategy,
+    prices_wide: pd.DataFrame,
+    config: WalkForwardConfig,
+    periods_per_year: int = 252,
+    backtest_kwargs: dict | None = None,
+) -> dict[str, Any]:
+    """Walk-forward weight learner for a CombinedExplainableStrategy.
+
+    For each fold:
+      1. Slice train and test windows per ``config`` (reusing the same
+         expanding/rolling/min_train semantics as ``walk_forward``).
+      2. For each child strategy, run a single backtest on the **train**
+         slice with the strategy's own default params and collect the per-
+         bar portfolio returns. (One backtest per child, not a sweep — the
+         child's parameters are frozen; we're only fitting the *weights*.)
+      3. Fit Sharpe-max convex-combination weights on the train returns
+         (with inverse-vol fallback).
+      4. Hold those weights and evaluate the combined strategy on the test
+         slice. Record per-fold OOS Sharpe + the chosen weights.
+
+    Writes the final fold's weights back onto ``strategy.weights`` so the
+    caller can use the strategy directly after the call, and returns a
+    summary dict mirroring ``aggregate_walkforward`` for the OOS Sharpe.
+    """
+    if not hasattr(strategy, "children") or not hasattr(strategy, "weights"):
+        raise TypeError(
+            "fit_combined_weights_walk_forward needs a CombinedExplainableStrategy-shaped instance"
+        )
+
+    n_bars = len(prices_wide)
+    step = config.step if config.step is not None else config.test_size
+    backtest_kwargs = dict(backtest_kwargs or {})
+
+    folds_out: list[dict[str, Any]] = []
+    fold_idx = 0
+    test_start = config.train_size
+    any_fallback = False
+    last_weights: dict[str, float] | None = None
+
+    while test_start + config.test_size <= n_bars:
+        test_end = test_start + config.test_size
+        if config.mode == "rolling":
+            train_start = test_start - config.train_size
+            train_end = test_start
+        else:
+            train_end = test_start
+            if config.min_train is not None and fold_idx == 0:
+                train_start = max(0, train_end - config.min_train)
+            else:
+                train_start = 0
+
+        train_slice = _slice_wide(prices_wide, train_start, train_end)
+        test_slice = _slice_wide(prices_wide, test_start, test_end)
+
+        # Per-child train-window return series. We instantiate each child
+        # via the same path the strategy uses so picker / macro init args
+        # carry through.
+        children = strategy._instantiate_children()  # noqa: SLF001 — internal helper, documented
+        child_returns: dict[str, np.ndarray] = {}
+        for name, child in children.items():
+            try:
+                res = run_backtest(train_slice, child, **backtest_kwargs)
+                child_returns[name] = _portfolio_returns(res)
+            except Exception:
+                # Child blew up on this fold (e.g. macro_timing missing
+                # SPY in a slice that doesn't carry it) → zero series so
+                # the fitter naturally assigns it ~0 weight.
+                child_returns[name] = np.zeros(len(train_slice), dtype=float)
+
+        weights, fallback = fit_sharpe_max_weights(
+            child_returns, periods_per_year=periods_per_year
+        )
+        any_fallback = any_fallback or fallback
+        last_weights = weights
+
+        # OOS evaluation with the chosen weights.
+        from strategies.combined_explainable import CombinedExplainableStrategy
+
+        oos_strat = CombinedExplainableStrategy(
+            children=strategy.children,
+            child_params=strategy.child_params,
+            weights=weights,
+            **{k: v for k, v in strategy.params.items()},
+        )
+        oos_strat.weight_fit_fallback_ = fallback
+        oos_result = run_backtest(test_slice, oos_strat, **backtest_kwargs)
+        oos_returns = _portfolio_returns(oos_result)
+        oos_sharpe = annualised_sharpe(oos_returns, periods_per_year=periods_per_year)
+
+        folds_out.append(
+            {
+                "fold_idx": fold_idx,
+                "train_start": train_start,
+                "train_end": train_end,
+                "test_start": test_start,
+                "test_end": test_end,
+                "weights": weights,
+                "fallback": fallback,
+                "out_of_sample_sharpe": float(oos_sharpe),
+            }
+        )
+
+        test_start += step
+        fold_idx += 1
+
+    # Promote the last fold's weights onto the strategy so the caller can
+    # use it immediately (most-recent-fold convention).
+    if last_weights is not None:
+        strategy.weights = last_weights
+        strategy.weight_fit_fallback_ = any_fallback
+
+    oos = np.array([f["out_of_sample_sharpe"] for f in folds_out], dtype=float)
+    return {
+        "folds": folds_out,
+        "oos_sharpe_mean": float(np.nanmean(oos)) if oos.size else float("nan"),
+        "final_weights": last_weights or dict(strategy.weights),
+        "any_fallback": any_fallback,
+        "n_folds": len(folds_out),
+    }

@@ -335,6 +335,45 @@ class CombinedExplainableStrategy(Strategy):
             tail += f" [inactive: {', '.join(inactive)}]"
         return f"{verb} {ticker} because: {head}.{tail}"
 
+    # ─── weight learning (walk-forward) ───────────────────────────────────
+    def fit_weights_walk_forward(
+        self,
+        prices_wide: pd.DataFrame,
+        train_size: int | None = None,
+        test_size: int | None = None,
+        mode: str = "expanding",
+        periods_per_year: int = 252,
+        backtest_kwargs: dict | None = None,
+    ) -> dict[str, Any]:
+        """Learn convex-combination Sharpe-maximising weights via walk-forward.
+
+        Thin wrapper around ``backtest.walkforward.fit_combined_weights_walk_forward``
+        — kept here so the strategy presents a single import surface to
+        callers. After this returns, ``self.weights`` carries the
+        most-recent-fold weights and ``self.weight_fit_fallback_`` tells you
+        whether any fold fell back to inverse-vol.
+        """
+        # Local import to avoid an import cycle at module-load time.
+        from backtest.walkforward import (
+            WalkForwardConfig,
+            fit_combined_weights_walk_forward,
+        )
+
+        train = int(train_size or self.params["weight_fit_window"])
+        test = int(test_size or self.params["rebalance_freq"])
+        cfg = WalkForwardConfig(
+            train_size=train,
+            test_size=test,
+            mode=mode,  # type: ignore[arg-type]
+        )
+        return fit_combined_weights_walk_forward(
+            self,
+            prices_wide,
+            cfg,
+            periods_per_year=periods_per_year,
+            backtest_kwargs=backtest_kwargs,
+        )
+
     # ─── public read-only accessors ───────────────────────────────────────
     def get_explanation_log(self) -> dict[tuple[str, pd.Timestamp], dict[str, Any]]:
         """Return the per-(ticker, timestamp) explanation map.
