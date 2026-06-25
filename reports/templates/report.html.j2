@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ strategy_name }} — evaluation report</title>
+<style>
+  :root {
+    --bg:#0e1116; --panel:#161b22; --ink:#e6edf3; --mute:#8b949e;
+    --accent:#79c0ff; --good:#3fb950; --bad:#f85149; --warn:#d29922;
+    --border:#30363d; --code-bg:#0d1117;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif}
+  .wrap{max-width:1024px;margin:0 auto;padding:48px 24px 96px}
+  h1{font-size:30px;margin:0 0 6px}
+  h2{font-size:22px;margin:40px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+  h3{font-size:17px;margin:20px 0 8px;color:var(--accent)}
+  p{margin:8px 0}
+  code{background:var(--code-bg);border:1px solid var(--border);border-radius:4px;
+    padding:1px 6px;font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}
+  pre{background:var(--code-bg);border:1px solid var(--border);border-radius:8px;
+    padding:14px 16px;overflow-x:auto;font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
+  pre code{background:transparent;border:0;padding:0}
+  .lead{color:var(--mute);font-size:16px}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;
+    padding:16px 18px;margin:12px 0}
+  .tag{display:inline-block;background:var(--code-bg);border:1px solid var(--border);
+    padding:1px 8px;border-radius:999px;font-size:12px;color:var(--accent);margin-right:6px}
+  .ok{color:var(--good)} .warn{color:var(--warn)} .err{color:var(--bad)}
+  table{border-collapse:collapse;width:100%;font-size:13px;margin:8px 0}
+  th,td{border:1px solid var(--border);padding:6px 10px;text-align:left}
+  th{background:var(--code-bg);color:var(--accent);font-weight:600}
+  tr:nth-child(even) td{background:#11151b}
+  .grid-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  .grid-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+  .metric{background:var(--panel);border:1px solid var(--border);border-radius:10px;
+    padding:14px 16px}
+  .metric .label{color:var(--mute);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+  .metric .value{font:600 22px/1.1 ui-monospace,SFMono-Regular,Menlo,monospace;margin-top:6px;color:var(--ink)}
+  .metric .ci{color:var(--mute);font-size:12px;margin-top:4px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .badge{display:inline-block;padding:6px 14px;border-radius:999px;font-weight:600;
+    border:1px solid var(--border);font-size:13px}
+  .badge.pass{background:rgba(63,185,80,.12);color:var(--good);border-color:var(--good)}
+  .badge.warn{background:rgba(210,153,34,.12);color:var(--warn);border-color:var(--warn)}
+  .badge.fail{background:rgba(248,81,73,.12);color:var(--bad);border-color:var(--bad)}
+  .chart{margin:14px 0}
+  .chart img{display:block;width:100%;height:auto;border:1px solid var(--border);
+    border-radius:8px;background:var(--panel)}
+  .caption{color:var(--mute);font-size:12px;margin:4px 0 0;text-align:center}
+  hr{border:0;border-top:1px solid var(--border);margin:32px 0}
+  footer{color:var(--mute);font-size:13px;margin-top:48px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>{{ strategy_name }} — evaluation report</h1>
+<p class="lead">
+  {% for t in tickers %}<span class="tag">{{ t }}</span>{% endfor %}
+  &nbsp; <code>{{ start }} → {{ end }}</code> &nbsp; <code>{{ interval }}</code>
+</p>
+<p class="lead">Generated {{ generated_at }}.</p>
+
+<!-- ── 2. Headline metrics ─────────────────────────────────── -->
+<h2>Headline metrics</h2>
+<div class="grid-3">
+  <div class="metric">
+    <div class="label">Sharpe (annualised)</div>
+    <div class="value">{{ "%.2f" | format(headline.sharpe.point) }}</div>
+    <div class="ci">95% CI [{{ "%.2f" | format(headline.sharpe.lo) }}, {{ "%.2f" | format(headline.sharpe.hi) }}]</div>
+  </div>
+  <div class="metric">
+    <div class="label">Total return</div>
+    <div class="value">{{ "%+.1f%%" | format(headline.total_return.point * 100) }}</div>
+    <div class="ci">95% CI [{{ "%+.1f%%" | format(headline.total_return.lo * 100) }}, {{ "%+.1f%%" | format(headline.total_return.hi * 100) }}]</div>
+  </div>
+  <div class="metric">
+    <div class="label">Max drawdown</div>
+    <div class="value">{{ "%.1f%%" | format(headline.max_drawdown.point * 100) }}</div>
+    <div class="ci">95% CI [{{ "%.1f%%" | format(headline.max_drawdown.lo * 100) }}, {{ "%.1f%%" | format(headline.max_drawdown.hi * 100) }}]</div>
+  </div>
+  <div class="metric">
+    <div class="label">Win rate</div>
+    <div class="value">{{ "%.1f%%" | format(headline.win_rate * 100) }}</div>
+    <div class="ci">closed trades only</div>
+  </div>
+  <div class="metric">
+    <div class="label"># trades</div>
+    <div class="value">{{ headline.n_trades }}</div>
+    <div class="ci">{{ "&lt;10 = noisy" if headline.n_trades < 10 else "OK" | safe }}</div>
+  </div>
+  <div class="metric">
+    <div class="label">Exposure</div>
+    <div class="value">{{ "%.1f%%" | format(headline.exposure * 100) }}</div>
+    <div class="ci">fraction of bars held</div>
+  </div>
+</div>
+
+<!-- ── 3. Equity curve ─────────────────────────────────────── -->
+<h2>Equity curve vs benchmarks</h2>
+{% if charts.equity %}
+<div class="chart">
+  <img src="data:image/png;base64,{{ charts.equity }}" alt="Equity curves">
+  <p class="caption">Strategy equity overlaid on equal-weight buy-and-hold of the same universe{% if benchmarks_have_spy %} and a SPY buy-and-hold reference{% endif %}.</p>
+</div>
+{% else %}
+<p class="lead">Equity curve unavailable (no benchmark data).</p>
+{% endif %}
+
+<!-- ── 4. Price + entry/exit ───────────────────────────────── -->
+<h2>Price with entry / exit markers</h2>
+{% if charts.price %}
+<div class="chart">
+  <img src="data:image/png;base64,{{ charts.price }}" alt="Price with markers">
+  <p class="caption">Shown for <code>{{ first_ticker }}</code> only — see the SPA for the full per-ticker view.</p>
+</div>
+{% else %}
+<p class="lead">No trades on the first ticker — nothing to plot.</p>
+{% endif %}
+
+<!-- ── 5. Significance ─────────────────────────────────────── -->
+<h2>Significance</h2>
+<div class="panel">
+  {% if significance.dsr > 0.95 %}
+    <span class="badge pass">DSR pass — true Sharpe likely beats the deflated benchmark</span>
+  {% elif significance.dsr > 0.5 %}
+    <span class="badge warn">DSR borderline — not significant at 95% but above chance</span>
+  {% else %}
+    <span class="badge fail">DSR fail — selection bias swallows this result</span>
+  {% endif %}
+</div>
+<table>
+  <tr><th>Test</th><th>Value</th><th>Interpretation</th></tr>
+  <tr>
+    <td>Probabilistic Sharpe Ratio (PSR &gt; 0)</td>
+    <td>{{ "%.3f" | format(significance.psr) }}</td>
+    <td>P(true Sharpe &gt; 0) under skew/kurtosis-adjusted normal.</td>
+  </tr>
+  <tr>
+    <td>Deflated Sharpe Ratio</td>
+    <td>{{ "%.3f" | format(significance.dsr) }}</td>
+    <td>PSR deflated by the expected max Sharpe across {{ significance.n_trials }} trial(s) (σ = {{ "%.3f" | format(significance.sr_trials_std) }}).</td>
+  </tr>
+  <tr>
+    <td>Random-entry p-value</td>
+    <td>{% if significance.random_p_value is none %}n/a{% else %}{{ "%.3f" | format(significance.random_p_value) }}{% endif %}</td>
+    <td>Fraction of {{ significance.n_random_paths }} random-entry Monte Carlo paths with Sharpe ≥ strategy Sharpe.</td>
+  </tr>
+</table>
+
+<!-- ── 6. Regimes ──────────────────────────────────────────── -->
+<h2>Regime breakdown</h2>
+{% if regimes %}
+  <table>
+    <tr>
+      <th>Dimension</th><th>Regime</th><th>n bars</th>
+      <th>Total return</th><th>Sharpe</th><th>Max DD</th><th>Exposure</th>
+    </tr>
+    {% for row in regimes.rows %}
+    <tr>
+      <td>{{ row.dimension }}</td>
+      <td>{{ row.regime }}</td>
+      <td>{{ row.n_bars }}</td>
+      <td>{{ "%+.1f%%" | format(row.total_return * 100) }}</td>
+      <td>{% if row.sharpe is none or row.sharpe != row.sharpe %}n/a{% else %}{{ "%.2f" | format(row.sharpe) }}{% endif %}</td>
+      <td>{% if row.max_drawdown is none or row.max_drawdown != row.max_drawdown %}n/a{% else %}{{ "%.1f%%" | format(row.max_drawdown * 100) }}{% endif %}</td>
+      <td>{{ "%.1f%%" | format(row.exposure * 100) }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <div class="grid-3">
+    {% for dim, png in regimes.charts.items() %}
+    <div class="chart">
+      <img src="data:image/png;base64,{{ png }}" alt="Sharpe by {{ dim }}">
+      <p class="caption">{{ dim }}</p>
+    </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <p class="lead">Regime breakdown skipped — SPY and ^VIX bars are required. Run <code>python scripts/backfill.py --tickers SPY,^VIX</code> and re-render.</p>
+{% endif %}
+
+<!-- ── 7. Walk-forward ─────────────────────────────────────── -->
+{% if walkforward %}
+<h2>Walk-forward (IS vs OOS)</h2>
+<div class="grid-2">
+  <div>
+    <table>
+      <tr><th>Metric</th><th>Value</th></tr>
+      <tr><td>n folds</td><td>{{ walkforward.n_folds }}</td></tr>
+      <tr><td>Mean OOS Sharpe</td><td>{{ "%.2f" | format(walkforward.oos_sharpe_mean) }}</td></tr>
+      <tr><td>OOS Sharpe 95% CI</td><td>[{{ "%.2f" | format(walkforward.oos_sharpe_ci_lo) }}, {{ "%.2f" | format(walkforward.oos_sharpe_ci_hi) }}]</td></tr>
+      <tr><td>Decay slope (OOS ~ IS)</td>
+          <td>
+            {% if walkforward.decay_slope != walkforward.decay_slope %}n/a{% else %}{{ "%.2f" | format(walkforward.decay_slope) }}{% endif %}
+            {% if walkforward.decay_slope == walkforward.decay_slope and walkforward.decay_slope < 0.3 %}
+              <span class="warn">— overfit warning (&lt; 0.3)</span>
+            {% endif %}
+          </td>
+      </tr>
+    </table>
+  </div>
+  <div>
+    {% if walkforward.chart %}
+    <div class="chart">
+      <img src="data:image/png;base64,{{ walkforward.chart }}" alt="OOS decay scatter">
+      <p class="caption">Each point = one fold. Slope &lt; 1 means OOS Sharpe falls short of IS.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<!-- ── 8. Attribution ──────────────────────────────────────── -->
+<h2>Market attribution (CAPM vs SPY)</h2>
+{% if attribution %}
+<table>
+  <tr><th>Metric</th><th>Value</th><th>Notes</th></tr>
+  <tr><td>α (per period)</td><td>{{ "%.5f" | format(attribution.alpha) }}</td><td>Plain-OLS intercept on excess returns.</td></tr>
+  <tr><td>α (annualised)</td><td>{{ "%+.2f%%" | format(attribution.alpha_annualised * 100) }}</td><td>α × {{ attribution.periods_per_year }}.</td></tr>
+  <tr><td>β</td><td>{{ "%.3f" | format(attribution.beta) }}</td><td>Sensitivity to SPY excess returns.</td></tr>
+  <tr><td>α t-stat (plain OLS)</td><td>{{ "%.2f" | format(attribution.alpha_t_stat) }}</td><td>No HAC correction; see IMPROVEMENTS.</td></tr>
+  <tr><td>R²</td><td>{{ "%.3f" | format(attribution.r_squared) }}</td><td>In-sample fit of the regression.</td></tr>
+</table>
+{% else %}
+<p class="lead">Attribution skipped — SPY bars are required. Run <code>python scripts/backfill.py --tickers SPY</code> and re-render.</p>
+{% endif %}
+
+<!-- ── 9. Footer / reproducibility ─────────────────────────── -->
+<h2>Reproducibility</h2>
+<p class="lead">Generated by <code>python -m reports.evaluate</code> at {{ generated_at }}.</p>
+<pre><code>strategy:   {{ strategy_name }}
+tickers:    {{ tickers | join(", ") }}
+window:     {{ start }} → {{ end }} ({{ interval }})
+params:     {{ params_json }}
+commission: {{ commission }}
+slippage:   {{ slippage }}
+n_resamples: {{ n_resamples }}
+walk_forward: {{ "yes" if walkforward else "no" }}</code></pre>
+
+<footer>algo-trading evaluation gauntlet — Task 7e.</footer>
+
+</div>
+</body>
+</html>
