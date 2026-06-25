@@ -161,6 +161,74 @@ pytest -q
 
 Covers the data-layer schema/sort invariants and the backtest metrics.
 
+## 7. Evaluation gauntlet (`reports/`)
+
+Single-shot Sharpe numbers lie. The evaluation gauntlet runs every strategy
+through **headline metrics with bootstrap CIs**, **PSR / DSR significance**,
+**per-regime Sharpe**, **walk-forward IS-vs-OOS decay**, and **CAPM attribution
+vs SPY** — all rendered into one self-contained dark-theme HTML file you can
+share without a network.
+
+```bash
+# fast: skip walk-forward, use ClickHouse-backed prices
+python -m reports.evaluate ma_crossover \
+    --tickers AAPL,MSFT --start 2022-01-01 --end 2023-01-01 \
+    --no-walk-forward
+
+# full gauntlet, including walk-forward
+python -m reports.evaluate ma_crossover --walk-forward
+```
+
+Output lands in `reports/output/<strategy>_<timestamp>.html`. The HTML is
+self-contained — every chart is an inline base64 PNG, no CDNs.
+
+### Honest numbers (placeholder — `ma_crossover` baseline)
+
+After Task 4 (combined-explainable strategy) ships, this section will carry
+the honest combined-strategy numbers. For now the baseline is `ma_crossover`,
+intended as the *placeholder template* — populate by running the gauntlet on
+your machine and pasting the values back in.
+
+| Metric                          | Value (95% CI)         | Notes                              |
+|---------------------------------|------------------------|------------------------------------|
+| Sharpe (annualised)             | `<x.xx>` `[lo, hi]`    | stationary block bootstrap         |
+| Total return                    | `<+x.x%>` `[lo, hi]`   |                                    |
+| Max drawdown                    | `<-x.x%>` `[lo, hi]`   |                                    |
+| PSR (P[true Sharpe > 0])        | `<0.xx>`               | Bailey & López de Prado 2012       |
+| DSR (deflated PSR)              | `<0.xx>`               | green when > 0.95                  |
+| Per-regime Sharpe — bull / bear | `<x.xx>` / `<x.xx>`    | SPY > 200d SMA split               |
+| Per-regime Sharpe — low / mid / high vol | `<x.xx>` / `<x.xx>` / `<x.xx>` | window-relative VIX terciles |
+| OOS-fold Sharpe distribution    | `<mean>` `[ci]`        | walk-forward, one point per fold   |
+| Decay slope (OOS ~ IS)          | `<x.xx>`               | < 0.3 → overfit warning            |
+
+> **No more headline numbers without CIs.** If a Sharpe shows up in this
+> repo without a confidence interval next to it, treat it as suspicious.
+
+### Overfit demo
+
+```bash
+python -m reports.overfit_demo
+```
+
+Runs a deliberately wide sweep on the in-sample window, promotes the winner,
+and re-runs the full gauntlet on the winner. If the strategy was genuinely
+overfit to the IS noise, the DSR badge will land **amber or red** (not
+green) and the script prints:
+
+```
+✅ overfit gauntlet works (DSR < 0.95 — the gate fires)
+```
+
+If the sweep happens to find a real signal (e.g. a long-window MA crossover
+on a real bull market) the demo will warn instead:
+
+```
+⚠️  DSR > 0.95 — sweep wasn't overfit enough. Try a wider grid...
+```
+
+— this is *also* expected behaviour. The honest gauntlet doesn't manufacture
+overfit signals; it surfaces them when they exist.
+
 ## Architecture notes
 
 - **Polars in the data layer**; conversion to pandas happens only at the
