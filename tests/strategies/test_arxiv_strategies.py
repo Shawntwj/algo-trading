@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from strategies import REGISTRY, Signals
+from strategies.macro_timing import MacroTimingXiong
 from strategies.pca_stat_arb import PCAStatArb
 
 
@@ -115,3 +116,65 @@ def test_pca_stat_arb_too_few_tickers_returns_empty_signal():
     assert sig.entries.shape == data["close"].shape
     assert sig.entries.values.sum() == 0
     assert sig.exits.values.sum() == 0
+
+
+# ─── MacroTimingXiong ─────────────────────────────────────────────────────
+def test_macro_timing_registered():
+    assert "macro_timing" in REGISTRY
+    assert REGISTRY["macro_timing"] is MacroTimingXiong
+
+
+def test_macro_timing_contract_no_nans():
+    data = _macro_frame()
+    strat = MacroTimingXiong(
+        growth_tickers=("GROW",), defensive_tickers=("DEF",)
+    )
+    sig = strat.generate_signals(data)
+
+    close = data["close"]
+    assert sig.entries.shape == close.shape
+    assert sig.exits.shape == close.shape
+    assert sig.entries.index.equals(close.index)
+    assert list(sig.entries.columns) == list(close.columns)
+    assert not sig.entries.isna().any().any()
+    assert not sig.exits.isna().any().any()
+
+
+def test_macro_timing_targets_growth_basket():
+    data = _macro_frame()
+    strat = MacroTimingXiong(
+        growth_tickers=("GROW",), defensive_tickers=("DEF",),
+    )
+    sig = strat.generate_signals(data)
+    # At least one entry on either basket and one exit somewhere.
+    growth_entries = int(sig.entries["GROW"].sum())
+    defensive_entries = int(sig.entries["DEF"].sum())
+    assert growth_entries + defensive_entries > 0
+    assert int(sig.exits.values.sum()) > 0
+    # Should not trade SPY / VIX / IRX (those are inputs only).
+    for t in ("SPY", "^VIX", "^IRX"):
+        assert int(sig.entries[t].sum()) == 0
+        assert int(sig.exits[t].sum()) == 0
+
+
+def test_macro_timing_target_weight_in_paper_range():
+    data = _macro_frame()
+    strat = MacroTimingXiong(
+        growth_tickers=("GROW",), defensive_tickers=("DEF",)
+    )
+    _ = strat.generate_signals(data)
+    # w_target = 0.5 + MaxTilt * tanh(...) ⇒ ∈ [0.5 - MaxTilt, 0.5 + MaxTilt].
+    wG = strat.last_target_weight_
+    lo, hi = 0.5 - 0.5, 0.5 + 0.5  # MaxTilt default = 0.5
+    assert wG.min() >= lo - 1e-9
+    assert wG.max() <= hi + 1e-9
+
+
+def test_macro_timing_missing_inputs_returns_empty_signal():
+    # No SPY / VIX / IRX columns → strategy can't compute the macro signals
+    # and must degrade gracefully to zero-signal rather than crash.
+    data = _wide_frame(n_bars=260, n_tickers=4, seed=5)
+    strat = MacroTimingXiong()
+    sig = strat.generate_signals(data)
+    assert sig.entries.shape == data["close"].shape
+    assert sig.entries.values.sum() == 0
