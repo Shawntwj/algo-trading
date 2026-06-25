@@ -292,6 +292,35 @@ def test_walkforward_returns_folds_and_aggregate():
 
 
 @ch_required
+def test_regimes_split_returns_per_regime_stats():
+    """Per-regime stats need both the strategy bars *and* SPY/VIX bars in
+    ClickHouse. Skips cleanly if any are missing."""
+    ticker = CH_TICKERS[0]
+    r = client.post(
+        "/regimes/split",
+        json={
+            "tickers": [ticker],
+            "start": "2022-01-01",
+            "end": "2023-01-01",
+            "interval": "1d",
+            "strategy": "ma_crossover",
+            "params": {"fast": 10, "slow": 30},
+            "commission": 0.0005,
+            "slippage": 0.0005,
+        },
+    )
+    if r.status_code == 422:
+        pytest.skip(f"Missing SPY/VIX or no overlap: {r.json()}")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["strategy"] == "ma_crossover"
+    assert isinstance(body["regimes"], list)
+    if body["regimes"]:
+        row = body["regimes"][0]
+        assert {"dimension", "regime", "n_bars", "sharpe"}.issubset(row)
+
+
+@ch_required
 def test_sweep_ranks_by_sharpe_desc():
     ticker = CH_TICKERS[0]
     r = client.post(

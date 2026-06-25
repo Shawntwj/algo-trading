@@ -14,6 +14,8 @@ from .schemas import (
     BenchmarkRequest,
     BenchmarkResponse,
     HealthResponse,
+    RegimeSplitRequest,
+    RegimeSplitResponse,
     StatsRequest,
     StatsResponse,
     StrategyInfo,
@@ -192,6 +194,36 @@ def attribution_endpoint(req: AttributionRequest) -> AttributionResponse:
         log.exception("attribution failed")
         raise HTTPException(status_code=500, detail=str(exc))
     return AttributionResponse(**payload)
+
+
+@app.post("/regimes/split", response_model=RegimeSplitResponse)
+def regimes_split_endpoint(req: RegimeSplitRequest) -> RegimeSplitResponse:
+    """Per-regime stats for a single backtest (BRIEF Task 7d).
+
+    Runs the strategy, tags each bar with trend/vol/drawdown regimes (via SPY
+    and VIX), and returns per-regime Sharpe / total return / max-DD / exposure.
+    """
+    try:
+        payload = services.run_regime_split(
+            tickers=req.tickers,
+            start=req.start,
+            end=req.end,
+            interval=req.interval,
+            strategy=req.strategy,
+            params=req.params,
+            commission=req.commission,
+            slippage=req.slippage,
+            spy_ticker=req.spy_ticker,
+            vix_ticker=req.vix_ticker,
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Unknown strategy: {req.strategy}")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        log.exception("regimes_split failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+    return RegimeSplitResponse(**payload)
 
 
 @app.post("/sweep", response_model=SweepResponse)

@@ -15,7 +15,7 @@ from backtest import compare, polars_to_wide, run_backtest, sweep
 from backtest.benchmarks import buy_and_hold, buy_and_hold_spy
 from backtest.engine import BacktestResult
 from backtest.metrics import summarize
-from data import list_tickers, load_bars
+from data import list_tickers, load_bars  # noqa: F401  (load_bars used elsewhere too)
 from strategies import REGISTRY
 
 
@@ -435,6 +435,94 @@ def run_attribution(
         "r_squared": _jsonable(out["r_squared"]),
         "n_obs": int(out["n_obs"]),
     }
+
+
+# ─── Regime split (Task 7d) ─────────────────────────────────────────────────
+def run_regime_split(
+    *,
+    tickers: list[str],
+    start: str,
+    end: str,
+    interval: str,
+    strategy: str,
+    params: dict[str, Any],
+    commission: float,
+    slippage: float,
+    spy_ticker: str = "SPY",
+    vix_ticker: str = "^VIX",
+) -> dict[str, Any]:
+    """Backtest the strategy, tag regimes from SPY/VIX, then split stats by regime.
+
+    Strategy returns are the bar-over-bar percent change of the portfolio
+    equity curve, aligned to the SPY/VIX index via inner-join on timestamp.
+    """
+    import polars as pl
+
+    from backtest.regimes import tag_all
+    from backtest.regime_split import split_stats_by_regime
+
+    strat_cls = get_strategy_class(strategy)
+    wide = load_wide(tickers, start, end, interval)
+    strat = strat_cls(**params)
+    result = run_backtest(
+        wide,
+        strat,
+        commission=commission,
+        slippage=slippage,
+        freq=_interval_to_freq(interval),
+    )
+
+    # Strategy returns: aggregate portfolio equity → pct-change.
+    eq = result.portfolio.value()
+    if isinstance(eq, pd.DataFrame):
+        eq_series = eq.sum(axis=1)
+    else:
+        eq_series = eq
+    rets = eq_series.pct_change().dropna()
+
+    # SPY + VIX bars (independent of tickers list) for the same window.
+    spy_df = load_bars([spy_ticker], start=start, end=end, interval=interval)
+    vix_df = load_bars([vix_ticker], start=start, end=end, interval=interval)
+    if spy_df.is_empty():
+        raise ValueError(f"No SPY bars (`{spy_ticker}`) in the requested range.")
+    if vix_df.is_empty():
+        raise ValueError(f"No VIX bars (`{vix_ticker}`) in the requested range.")
+
+    spy_pd = spy_df.to_pandas().assign(timestamp=lambda d: pd.to_datetime(d["timestamp"]))
+    vix_pd = vix_df.to_pandas().assign(timestamp=lambda d: pd.to_datetime(d["timestamp"]))
+    spy_pd = spy_pd.set_index("timestamp")[["close"]].rename(columns={"close": "spy"})
+    vix_pd = vix_pd.set_index("timestamp")[["close"]].rename(columns={"close": "vix"})
+
+    # Align everything on common timestamps (inner join).
+    rets.index = pd.to_datetime(rets.index)
+    aligned = rets.to_frame("ret").join(spy_pd, how="inner").join(vix_pd, how="inner").dropna()
+    if aligned.empty:
+        raise ValueError("No overlap between strategy returns and SPY/VIX bars.")
+
+    regimes_df = tag_all(
+        spy_close=pl.Series(values=aligned["spy"].to_numpy()),
+        vix_close=pl.Series(values=aligned["vix"].to_numpy()),
+        timestamps=pl.Series(values=aligned.index.astype("int64").to_numpy()),
+    )
+    stats = split_stats_by_regime(
+        returns=pl.Series(values=aligned["ret"].to_numpy()),
+        regimes_df=regimes_df,
+    )
+
+    rows: list[dict[str, Any]] = []
+    for r in stats.iter_rows(named=True):
+        rows.append(
+            {
+                "dimension": r["dimension"],
+                "regime": r["regime"],
+                "n_bars": int(r["n_bars"]),
+                "total_return": _jsonable(r["total_return"]),
+                "sharpe": _jsonable(r["sharpe"]),
+                "max_drawdown": _jsonable(r["max_drawdown"]),
+                "exposure": _jsonable(r["exposure"]),
+            }
+        )
+    return {"strategy": strategy, "regimes": rows}
 
 
 # ─── Health ─────────────────────────────────────────────────────────────────

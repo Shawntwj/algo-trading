@@ -214,3 +214,38 @@ class AttributionResponse(BaseModel):
     alpha_t_stat: float | None
     r_squared: float | None
     n_obs: int
+
+
+# ─── Regime split (Task 7d) ─────────────────────────────────────────────────
+class RegimeSplitRequest(BaseModel):
+    tickers: list[str] = Field(min_length=1)
+    start: str
+    end: str
+    interval: str = "1d"
+    strategy: str
+    params: dict[str, Any] = Field(default_factory=dict)
+    commission: float = 0.0005
+    slippage: float = 0.0005
+    spy_ticker: str = Field(
+        default="SPY",
+        description="Symbol used as the SPY proxy for trend/drawdown regimes.",
+    )
+    vix_ticker: str = Field(
+        default="^VIX",
+        description="Symbol used as the VIX proxy for the volatility regime.",
+    )
+
+
+class RegimeStat(BaseModel):
+    dimension: str
+    regime: str
+    n_bars: int
+    total_return: float | None
+    sharpe: float | None
+    max_drawdown: float | None
+    exposure: float | None
+
+
+class RegimeSplitResponse(BaseModel):
+    strategy: str
+    regimes: list[RegimeStat]
