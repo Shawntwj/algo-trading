@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from strategies import REGISTRY, Signals
+from strategies.drift_regime import DriftRegimeSingha
 from strategies.macro_timing import MacroTimingXiong
 from strategies.pca_stat_arb import PCAStatArb
 
@@ -178,3 +179,55 @@ def test_macro_timing_missing_inputs_returns_empty_signal():
     sig = strat.generate_signals(data)
     assert sig.entries.shape == data["close"].shape
     assert sig.entries.values.sum() == 0
+
+
+# ─── DriftRegimeSingha ────────────────────────────────────────────────────
+def test_drift_regime_registered():
+    assert "drift_regime" in REGISTRY
+    assert REGISTRY["drift_regime"] is DriftRegimeSingha
+
+
+def test_drift_regime_contract_no_nans():
+    data = _wide_frame(n_bars=260, n_tickers=6, seed=11)
+    strat = DriftRegimeSingha()
+    sig = strat.generate_signals(data)
+    close = data["close"]
+    assert sig.entries.shape == close.shape
+    assert sig.exits.shape == close.shape
+    assert sig.entries.index.equals(close.index)
+    assert not sig.entries.isna().any().any()
+    assert not sig.exits.isna().any().any()
+
+
+def test_drift_regime_emits_signals_in_uptrend():
+    # An uptrend frame should push UpFraction above 0.6 for several names →
+    # the regime gate opens and entries appear.
+    data = _wide_frame(
+        n_bars=260, n_tickers=6, seed=13, drift=0.0015, vol=0.008
+    )
+    strat = DriftRegimeSingha(up_fraction_threshold=0.55, top_decile=0.4)
+    sig = strat.generate_signals(data)
+    assert int(sig.entries.values.sum()) > 0
+
+
+def test_drift_regime_edge_score_is_finite():
+    # EDGE = BASE * REGIME — should never carry NaN/Inf in the inspection
+    # cache after our explicit NaN→0 substitution.
+    data = _wide_frame(n_bars=260, n_tickers=6, seed=17)
+    strat = DriftRegimeSingha()
+    _ = strat.generate_signals(data)
+    edge = strat.last_edge_
+    assert edge is not None
+    finite = np.isfinite(edge.to_numpy())
+    assert finite.all()
+
+
+def test_drift_regime_low_fraction_universe_no_entries():
+    # Heavy downtrend → UpFraction stays well below 0.60 → regime gate
+    # never opens → zero entries (proves the regime gate actually gates).
+    data = _wide_frame(
+        n_bars=260, n_tickers=6, seed=23, drift=-0.003, vol=0.008
+    )
+    strat = DriftRegimeSingha()
+    sig = strat.generate_signals(data)
+    assert int(sig.entries.values.sum()) == 0
