@@ -29,6 +29,14 @@ The Main panel is tabbed:
   Trial count and σ(Sharpe) are derived from the prior sweep when present.
 - **Walk-forward** — train/test inputs + `/walkforward` scatter of IS vs OOS
   fold Sharpes with a y=x reference line; warns if decay slope < 0.3.
+- **Explain** — enabled only after a `combined_explainable` run (the sidebar
+  auto-routes that strategy through `/backtest/explain`). Click any entry /
+  exit triangle on the price chart to load that trade's per-child breakdown:
+  the plain-English `summary` line as a headline, a bar chart of contributing
+  child signals (sorted by `|weight × signal|`, coloured by sign), a
+  key-value table of weights / signals / contributions, and a
+  "Copy as Markdown" button that yields the same shape as
+  `backtest/explainability.py::to_journal` for one trade.
 
 ## Quickstart
 
