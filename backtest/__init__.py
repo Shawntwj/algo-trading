@@ -13,6 +13,12 @@ from .walkforward import (
     walk_forward,
 )
 from .attribution import child_signal_attribution, market_attribution
+from .explainability import (
+    TradeExplanation,
+    explain_trades,
+    journal_to_file,
+    to_journal,
+)
 
 __all__ = [
     "run_backtest",
@@ -37,4 +43,8 @@ __all__ = [
     "walk_forward",
     "child_signal_attribution",
     "market_attribution",
+    "TradeExplanation",
+    "explain_trades",
+    "journal_to_file",
+    "to_journal",
 ]
