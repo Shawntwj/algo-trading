@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>algo-trading — Runbook</title>
+<style>
+  :root {
+    --bg:#0e1116; --panel:#161b22; --ink:#e6edf3; --mute:#8b949e;
+    --accent:#79c0ff; --good:#3fb950; --bad:#f85149; --warn:#d29922;
+    --border:#30363d; --code-bg:#0d1117;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif}
+  .wrap{max-width:960px;margin:0 auto;padding:48px 24px 96px}
+  h1{font-size:32px;margin:0 0 6px}
+  h2{font-size:22px;margin:48px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+  h3{font-size:17px;margin:24px 0 8px;color:var(--accent)}
+  p{margin:8px 0}
+  a{color:var(--accent)}
+  code{background:var(--code-bg);border:1px solid var(--border);border-radius:4px;
+    padding:1px 6px;font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}
+  pre{background:var(--code-bg);border:1px solid var(--border);border-radius:8px;
+    padding:14px 16px;overflow-x:auto;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
+  pre code{background:transparent;border:0;padding:0}
+  .lead{color:var(--mute);font-size:16px}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;
+    padding:16px 18px;margin:12px 0}
+  .tag{display:inline-block;background:var(--code-bg);border:1px solid var(--border);
+    padding:1px 8px;border-radius:999px;font-size:12px;color:var(--accent);margin-right:6px}
+  .ok{color:var(--good)} .warn{color:var(--warn)} .err{color:var(--bad)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  table{border-collapse:collapse;width:100%;font-size:13px;margin:8px 0}
+  th,td{border:1px solid var(--border);padding:6px 10px;text-align:left}
+  th{background:var(--code-bg);color:var(--accent);font-weight:600}
+  tr:nth-child(even) td{background:#11151b}
+  .toc{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 0}
+  .toc a{background:var(--panel);border:1px solid var(--border);padding:6px 10px;
+    border-radius:6px;text-decoration:none;font-size:13px}
+  .step{display:flex;gap:14px;align-items:flex-start;margin:12px 0}
+  .step .n{flex:0 0 28px;height:28px;border-radius:50%;background:var(--accent);
+    color:#0d1117;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:13px}
+  .ascii{font:12px/1.35 ui-monospace,Menlo,monospace;white-space:pre;color:var(--mute)}
+  details{background:var(--panel);border:1px solid var(--border);border-radius:8px;
+    padding:10px 14px;margin:8px 0}
+  details>summary{cursor:pointer;color:var(--accent);font-weight:600}
+  .kbd{background:var(--code-bg);border:1px solid var(--border);border-bottom-width:2px;
+    border-radius:4px;padding:1px 6px;font:12px ui-monospace,Menlo,monospace}
+  .pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;
+    background:#1f2a37;color:#79c0ff;border:1px solid #30363d}
+  hr{border:0;border-top:1px solid var(--border);margin:32px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>algo-trading — Runbook</h1>
+<p class="lead">A hands-on guide to running, using, and extending your equities signal-research platform.</p>
+
+<div class="panel">
+  <strong>Current status (verified on this machine):</strong><br>
+  <span class="ok">●</span> ClickHouse running on <code>localhost:8123</code> &nbsp;
+  <span class="ok">●</span> 5 tickers backfilled (3,760 rows) &nbsp;
+  <span class="ok">●</span> Tests passing (5/5) &nbsp;
+  <span class="ok">●</span> Dashboard live at <a href="http://localhost:8501" target="_blank">localhost:8501</a>
+</div>
+
+<div class="toc">
+  <a href="#mental-model">1 · Mental model</a>
+  <a href="#daily-loop">2 · The daily loop</a>
+  <a href="#setup">3 · First-time setup</a>
+  <a href="#backfill">4 · Getting data in</a>
+  <a href="#dashboard">5 · Using the dashboard</a>
+  <a href="#code">6 · Driving it from code</a>
+  <a href="#new-strategy">7 · Adding a strategy</a>
+  <a href="#dagster">8 · Dagster orchestration</a>
+  <a href="#interpret">9 · Interpreting results</a>
+  <a href="#troubleshoot">10 · Troubleshooting</a>
+</div>
+
+<!-- ─────────────────────────────────────────── -->
+<h2 id="mental-model">1 · Mental model</h2>
+<p>Four layers, decoupled — you can swap any one without touching the others.</p>
+
+<pre class="ascii">          ┌──────────────────────────────────────────────────────────┐
+          │  STREAMLIT  ← interactive UI: pick → run → compare        │
+          └────────────┬─────────────────────────────────────────────┘
+                       │  data, signals, metrics
+          ┌────────────▼─────────────────────────────────────────────┐
+          │  BACKTEST   ← vectorbt: signals→portfolio, sweeps, stats  │
+          └────────────┬─────────────────────────────────────────────┘
+                       │  wide pandas frame (close[ticker], ...)
+          ┌────────────▼─────────────────────────────────────────────┐
+          │  STRATEGY   ← one file per signal: generate_signals()    │
+          └────────────┬─────────────────────────────────────────────┘
+                       │  polars DataFrame (long format)
+          ┌────────────▼─────────────────────────────────────────────┐
+          │  DATA       ← ClickHouse `bars` table  ←  YFinanceSource │
+          └──────────────────────────────────────────────────────────┘
+                       ▲                          ▲
+                       │ direct CLI               │ Dagster asset (same code)
+                       └──────────────────────────┘</pre>
+
+<p>The arrows tell you what depends on what. <strong>Strategies do not know about ClickHouse. The backtest engine does not know about yfinance. The dashboard knows nothing about Dagster.</strong> That decoupling is the whole point — it's what lets you iterate fast.</p>
+
+<!-- ─────────────────────────────────────────── -->
+<h2 id="daily-loop">2 · The daily loop</h2>
+<p>What a typical research session looks like:</p>
+
+<div class="step"><div class="n">1</div><div>
+  <strong>Start ClickHouse</strong> (once, lives across sessions): <code>docker compose up -d</code>
+</div></div>
+<div class="step"><div class="n">2</div><div>
+  <strong>Refresh data</strong> if you haven't today: <code>python scripts/backfill.py</code> &nbsp;or click <em>Materialize</em> in Dagster.
+</div></div>
+<div class="step"><div class="n">3</div><div>
+  <strong>Open the dashboard</strong>: <code>streamlit run dashboard/app.py</code>
+</div></div>
+<div class="step"><div class="n">4</div><div>
+  <strong>Sweep + compare.</strong> Pick a strategy, hit Sweep mode, eyeball the heatmap, note the top-3 by Sharpe.
+</div></div>
+<div class="step"><div class="n">5</div><div>
+  <strong>Form a hypothesis</strong> ("RSI exit at 60 looks better than 50 on tech names — why?"). Write a new strategy file or tweak parameters.
+</div></div>
+<div class="step"><div class="n">6</div><div>
+  <strong>Stop ClickHouse</strong> when done (optional): <code>docker compose down</code>. Data persists in a named volume.
+</div></div>
+
+<!-- ─────────────────────────────────────────── -->
+<h2 id="setup">3 · First-time setup</h2>
+<p>You've already done this once. Here it is for next time / a new machine.</p>
+
+<pre><code># 1. Python venv (3.11+, we used 3.12.7 via pyenv)
+pyenv shell 3.12.7
+python -m venv .venv && source .venv/bin/activate
+
+# 2. Dependencies
+pip install -r requirements.txt
+
+# 3. ClickHouse
+docker compose up -d
+# verify:  curl http://localhost:8123/ping   →  "Ok."
+
+# 4. Tests (proves wiring works without hitting yfinance)
+pytest -q</code></pre>
+
+<p>Config lives in <code>config/tickers.yaml</code> — edit the universe, intervals, commission/slippage, or ClickHouse connection there.</p>
+
+<!-- ─────────────────────────────────────────── -->
+<h2 id="backfill">4 · Getting data in</h2>
+
+<p>Two ways. They run the <em>same</em> code path — <code>data.backfill.backfill_universe()</code>.</p>
+
+<h3>Via CLI</h3>
+<pre><code># Whole universe from config/tickers.yaml:
+python scripts/backfill.py
+
+# Or pick what you want:
+python scripts/backfill.py --tickers AAPL,MSFT --start 2020-01-01 --end 2024-12-31
+
+# Daily interval is default; change with --interval 1h, 30m, etc.</code></pre>
+
+<p>What we ran earlier produced this output:</p>
+<pre><code>2026-06-25 00:28:41 INFO  ClickHouse schema ready (db=algo)
+2026-06-25 00:28:43 INFO  backfilled 5 tickers
+  AAPL         752 rows
+  MSFT         752 rows
+  NVDA         752 rows
+  QQQ          752 rows
+  SPY          752 rows</code></pre>
+
+<h3>How idempotency works</h3>
+<p>The <code>bars</code> table is a <code>ReplacingMergeTree</code> ordered on <code>(ticker, interval, timestamp)</code>. After every insert we run <code>OPTIMIZE TABLE bars FINAL DEDUPLICATE</code>, and reads use <code>FROM bars FINAL</code>. <strong>Re-running a backfill never duplicates rows.</strong> Safe to schedule, safe to retry.</p>
+
+<h3>Inspect the database directly</h3>
+<pre><code># row counts per ticker:
+curl 'http://localhost:8123/?query=SELECT+ticker,count()+FROM+algo.bars+GROUP+BY+ticker+ORDER+BY+ticker+FORMAT+PrettyCompact'
+
+# or use the ClickHouse client inside the container:
+docker exec -it algo-clickhouse clickhouse-client --query \
+  "SELECT ticker, min(timestamp), max(timestamp), count() FROM algo.bars GROUP BY ticker ORDER BY ticker"</code></pre>
+
+<!-- ─────────────────────────────────────────── -->
+<h2 id="dashboard">5 · Using the dashboard</h2>
+
+<p>Open <a href="http://localhost:8501" target="_blank">localhost:8501</a>. Sidebar on the left, results on the right.</p>
+
+<h3>Sidebar controls</h3>
+<table>
+  <tr><th>Section</th><th>What it does</th></tr>
+  <tr><td><strong>Tickers</strong></td><td>Multi-select. Default = whatever is already in ClickHouse.</td></tr>
+  <tr><td><strong>Start / End</strong></td><td>Date range for the backtest.</td></tr>
+  <tr><td><strong>Strategy</strong></td><td>Picks a class from <code>strategies.REGISTRY</code>.</td></tr>
+  <tr><td><strong>Costs</strong></td><td>Commission &amp; slippage per side. Defaults from <code>tickers.yaml</code>.</td></tr>
+  <tr><td><strong>Mode = Single</strong></td><td>One run with the chosen params.</td></tr>
+  <tr><td><strong>Mode = Sweep</strong></td><td>Cartesian product of every multi-selected param value.</td></tr>
+</table>
+
+<h3>What you'll see after pressing Run</h3>
+<ol>
+  <li><strong>Metrics table</strong> — one row per backtest run, sorted by Sharpe descending. <em>This is your shortlist.</em></li>
+  <li><strong>Equity curves overlay</strong> — every run's portfolio value on one chart. Visual sanity check.</li>
+  <li><strong>Price + entry/exit markers</strong> — the best run, plotted on the price of one selected ticker. Use this to spot regimes where the signal worked or whiffed.</li>
+  <li><strong>Sharpe heatmap</strong> — only appears in Sweep mode with exactly 2 params having more than one value. Read it like a contour map: green = high Sharpe, red = low.</li>
+</ol>
+
+<div class="panel">
+  <strong>Tip.</strong> When sweeping 3+ params, fix two of them in the param multi-selects (just pick one value) and let the other two vary. The heatmap then reveals the interaction between exactly those two.
+</div>
+
+<!-- ─────────────────────────────────────────── -->
+<h2 id="code">6 · Driving it from code</h2>
+
+<p>The dashboard is one consumer of the backtest API. You can do the same thing in a notebook or script.</p>
+
+<pre><code>from data import load_bars
+from backtest import polars_to_wide, run_backtest, sweep, compare
+from strategies import MACrossover, RSIMeanReversion
+
+# 1. Pull data
+df = load_bars(['AAPL','MSFT','NVDA','SPY','QQQ'],
+               start='2022-01-01', end='2024-12-31')
+wide = polars_to_wide(df)
+
+# 2. Single backtest
+r1 = run_backtest(wide, MACrossover(fast=20, slow=50))
+r2 = run_backtest(wide, RSIMeanReversion(period=14, oversold=30, exit_level=55))
+print(compare([r1, r2]))
+
+# 3. Sweep
+results = sweep(wide, MACrossover,
+                grid={'fast': [10, 20, 30], 'slow': [50, 100, 150]})
+print(compare(results))</code></pre>
+
+<p>The actual output from when we ran this on your machine:</p>
+
+<p><span class="pill">Head-to-head</span></p>
+<table>
+  <tr><th>Strategy</th><th>Total return</th><th>Sharpe</th><th>Max DD</th><th>Win rate</th><th>Trades</th></tr>
+  <tr><td>rsi_mean_reversion (14,30,55)</td><td>+10.0%</td><td>0.54</td><td>−14.6%</td><td>66.7%</td><td>3</td></tr>
+  <tr><td>ma_crossover (20,50)</td><td>+35.9%</td><td>0.38</td><td>−33.2%</td><td>46.9%</td><td>8</td></tr>
+</table>
+
+<p><span class="pill">MA crossover sweep</span> &nbsp;3 × 3 grid, ranked by Sharpe</p>
+<table>
+  <tr><th>fast</th><th>slow</th><th>Return</th><th>Sharpe</th><th>Max DD</th><th>Trades</th></tr>
+  <tr><td>30</td><td>150</td><td>+168.8%</td><td><strong class="ok">1.28</strong></td><td>−17.7%</td><td>2</td></tr>
+  <tr><td>20</td><td>150</td><td>+170.7%</td><td>1.20</td><td>−18.7%</td><td>2</td></tr>
+  <tr><td>10</td><td>150</td><td>+145.3%</td><td>1.04</td><td>−20.7%</td><td>4</td></tr>
+  <tr><td>10</td><td>100</td><td>+145.5%</td><td>1.02</td><td>−20.1%</td><td>5</td></tr>
+  <tr><td>30</td><td>100</td><td>+150.8%</td><td>0.99</td><td>−21.8%</td><td>3</td></tr>
+  <tr><td>20</td><td>100</td><td>+118.6%</td><td>0.95</td><td>−20.3%</td><td>4</td></tr>
+  <tr><td>10</td><td>50</td><td>+52.1%</td><td>0.74</td><td>−20.6%</td><td>10</td></tr>
+  <tr><td>30</td><td>50</td><td>+41.5%</td><td>0.46</td><td>−34.7%</td><td>7</td></tr>
+  <tr><td>20</td><td>50</td><td>+35.9%</td><td>0.38</td><td>−33.2%</td><td>8</td></tr>
+</table>
+
+<p class="lead">Read this top-down: longer <code>slow</code> windows dominate — slower crossovers held the 2023–24 rally without flipping. The (30, 150) winner traded only twice and kept Sharpe above 1.</p>
+
+<!-- ─────────────────────────────────────────── -->
+<h2 id="new-strategy">7 · Adding a strategy</h2>
+
+<p><strong>One file. No engine changes.</strong> That's the contract.</p>
+
+<div class="step"><div class="n">1</div><div>Create <code>strategies/momentum_breakout.py</code>:
+<pre><code>import pandas as pd
+from .base import Signals, Strategy
+
+class MomentumBreakout(Strategy):
+    name = "momentum_breakout"
+
+    @classmethod
+    def default_params(cls):
+        return {"lookback": 20, "exit_lookback": 10}
+
+    @classmethod
+    def param_grid(cls):
+        return {
+            "lookback":      [10, 20, 50, 100],
+            "exit_lookback": [5, 10, 20],
+        }
+
+    def generate_signals(self, data: pd.DataFrame) -> Signals:
+        close = data["close"]
+        high_n  = close.rolling(self.params["lookback"]).max()
+        low_n   = close.rolling(self.params["exit_lookback"]).min()
+        entries = (close >= high_n) &amp; (close.shift(1) &lt; high_n.shift(1))
+        exits   = (close &lt;= low_n)  &amp; (close.shift(1) &gt; low_n.shift(1))
+        return Signals(entries.fillna(False), exits.fillna(False))</code></pre></div></div>
+
+<div class="step"><div class="n">2</div><div>Register it in <code>strategies/__init__.py</code>:
+<pre><code>from .momentum_breakout import MomentumBreakout
+REGISTRY["momentum_breakout"] = MomentumBreakout</code></pre></div></div>
+
+<div class="step"><div class="n">3</div><div>Refresh the dashboard tab. The new strategy appears in the dropdown with its parameters already wired into Single &amp; Sweep modes.</div></div>
+
+<h3>Strategy contract — the four hooks</h3>
+<table>
+  <tr><th>Method</th><th>Purpose</th></tr>
+  <tr><td><code>name</code> (class attr)</td><td>Key used in <code>REGISTRY</code> and labels.</td></tr>
+  <tr><td><code>default_params()</code></td><td>Used in Single mode and as fallbacks.</td></tr>
+  <tr><td><code>param_grid()</code></td><td>Options the sweep / sidebar will offer.</td></tr>
+  <tr><td><code>generate_signals(data)</code></td><td>Take a wide MultiIndex frame, return two boolean frames (entries, exits) shaped <code>rows=timestamps × cols=tickers</code>.</td></tr>
+</table>
+
+<details>
+<summary>The shape of <code>data</code> — accept no surprises</summary>
+<pre><code>data.columns       MultiIndex( field × ticker )
+data["close"]      DataFrame indexed by timestamp, columns = tickers
+data["close"]["AAPL"]   Series of AAPL closes
+
+# Always operate column-wise so it stays multi-ticker safe:
+fast = data["close"].rolling(20).mean()    # ✅ DataFrame in, DataFrame out
+fast = data["close"]["AAPL"].rolling(20)…  # ❌ collapses to one ticker</code></pre>
+</details>
+
+<!-- ─────────────────────────────────────────── -->
+<h2 id="dagster">8 · Dagster orchestration</h2>
+
+<p>Dagster is optional. The <code>bars</code> asset is a thin wrapper that calls <code>backfill_ticker()</code> — the same function the CLI uses.</p>
+
+<pre><code>dagster dev -w workspace.yaml
+# UI: http://localhost:3000</code></pre>
+
+<p>In the UI:</p>
+<ul>
+  <li><strong>Assets → bars</strong> shows one partition per ticker. Click <em>Materialize</em> on any subset to backfill those tickers.</li>
+  <li><strong>Schedules → daily_update_schedule</strong> is created in a <code>STOPPED</code> state by design. Toggle it on when you want the 21:30 UTC weekday refresh.</li>
+  <li><strong>Jobs → daily_update_job</strong> can be triggered manually any time.</li>
+</ul>
+
+<div class="panel">
+  <strong>Why both CLI and Dagster?</strong> CLI for fast local iteration ("backfill this one ticker now"). Dagster for everything that needs lineage, retries, history, or a schedule. Same code under the hood — choose by ergonomics.
+</div>
+
+<!-- ─────────────────────────────────────────── -->
+<h2 id="interpret">9 · Interpreting results</h2>
+
+<table>
+  <tr><th>Metric</th><th>What it tells you</th><th>Watch for</th></tr>
+  <tr><td>Sharpe</td><td>Risk-adjusted return. &gt;1 is good, &gt;2 suspicious on short windows.</td><td>Tiny trade counts inflate Sharpe artificially.</td></tr>
+  <tr><td>Total return</td><td>Cumulative P&amp;L over the period.</td><td>Compare to buy-and-hold of the same tickers.</td></tr>
+  <tr><td>Max drawdown</td><td>Worst peak-to-trough loss.</td><td>Strategies that look great can hide 40%+ DDs.</td></tr>
+  <tr><td>Win rate</td><td>% of closed trades that profited.</td><td>Trend strategies can have low win rates but big winners.</td></tr>
+  <tr><td>n_trades</td><td>How often you traded.</td><td>&lt;10 trades = statistically noisy. Sweep wider.</td></tr>
+  <tr><td>Exposure</td><td>Fraction of bars with a non-zero position.</td><td>Very low = signal rarely fires. Very high = no edge over buy-and-hold.</td></tr>
+</table>
+
+<h3>Common research traps</h3>
+<ul>
+  <li><strong>Curve-fitting.</strong> The best Sharpe in a sweep is often just luck. Hold out a date range; re-test there.</li>
+  <li><strong>Look-ahead bias.</strong> The framework uses signals from bar <em>t</em> to enter on bar <em>t</em>'s close, which is fine because <code>rolling()</code> only sees past values. But if you write <code>future_close.shift(-1)</code> in a signal, you'll cheat. Don't.</li>
+  <li><strong>Survivorship.</strong> Your universe is today's tickers. Backtests on <code>NVDA</code> since 2010 don't include the failed AI startups of that era.</li>
+  <li><strong>Costs.</strong> Default is 5 bps each side. For high-turnover signals, raise it and watch Sharpe collapse — that's the real story.</li>
+</ul>
+
+<!-- ─────────────────────────────────────────── -->
+<h2 id="troubleshoot">10 · Troubleshooting</h2>
+
+<details>
+<summary>Dashboard says "ClickHouse unavailable"</summary>
+<p><code>docker compose ps</code> — if not <em>healthy</em>, run <code>docker compose up -d</code>. If it crashed, <code>docker compose logs clickhouse</code>.</p>
+</details>
+
+<details>
+<summary>Dashboard says "No bars in ClickHouse for that selection"</summary>
+<p>You haven't backfilled that ticker / date range / interval. Run <code>python scripts/backfill.py --tickers TICKER --start YYYY-MM-DD</code>.</p>
+</details>
+
+<details>
+<summary>yfinance returns empty / 429-style errors</summary>
+<p>Rate-limited. Wait a minute, then retry. Or backfill fewer tickers at once. The <code>YFinanceSource</code> uses <code>threads=True</code> — if rate limits get worse, change to <code>False</code> in <code>data/yfinance_source.py</code>.</p>
+</details>
+
+<details>
+<summary>Sweep with N params blows up combinatorially</summary>
+<p>Cartesian product. 4 params × 4 values each = 256 runs. Trim the param multi-selects in the sidebar, or pass a smaller <code>grid=</code> in code.</p>
+</details>
+
+<details>
+<summary>Dagster UI port 3000 already in use</summary>
+<p><code>dagster dev -p 3001</code></p>
+</details>
+
+<details>
+<summary>Want to wipe and start over</summary>
+<pre><code>docker compose down -v       # ⚠ deletes the ClickHouse volume
+docker compose up -d
+python scripts/backfill.py</code></pre>
+</details>
+
+<hr>
+
+<p class="lead">That's the platform. The fastest way to internalize it is to <strong>add one new strategy of your own</strong> — pick something simple like a Bollinger reversion or a 52-week-high breakout — and watch it appear in the dashboard. Once you've done that round-trip, the rest of the system will feel obvious.</p>
+
+</div>
+</body>
+</html>

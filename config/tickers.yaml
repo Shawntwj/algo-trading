@@ -1,0 +1,24 @@
+universe:
+  - AAPL
+  - MSFT
+  - NVDA
+  - SPY
+  - QQQ
+
+intervals:
+  - "1d"
+
+backfill:
+  start: "2018-01-01"
+  end: null            # null = today
+
+costs:
+  commission: 0.0005   # 5 bps per side
+  slippage: 0.0005     # 5 bps per side
+
+clickhouse:
+  host: localhost
+  port: 8123
+  database: algo
+  user: default
+  password: ""
