@@ -105,7 +105,7 @@ export default function Sidebar({ onResult }: SidebarProps) {
       const sweptKeys = Object.entries(vars.grid ?? {})
         .filter(([, vals]) => (vals as unknown[]).length > 1)
         .map(([k]) => k);
-      onResult({ mode: "sweep", response: data, sweptKeys });
+      onResult({ mode: "sweep", response: data, request: vars, sweptKeys });
     },
     onError: (err) => {
       // eslint-disable-next-line no-console
@@ -115,8 +115,8 @@ export default function Sidebar({ onResult }: SidebarProps) {
 
   const singleMutation = useMutation({
     mutationFn: (req: BacktestRequest) => runBacktest(req),
-    onSuccess: (data) => {
-      onResult({ mode: "single", response: data });
+    onSuccess: (data, vars) => {
+      onResult({ mode: "single", response: data, request: vars });
     },
     onError: (err) => {
       // eslint-disable-next-line no-console

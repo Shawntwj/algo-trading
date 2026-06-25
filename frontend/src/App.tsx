@@ -2,11 +2,25 @@ import { useState } from "react";
 
 import Main from "./components/Main";
 import Sidebar from "./components/Sidebar";
-import type { BacktestResponse, SweepResponse } from "./api/types";
+import type {
+  BacktestRequest,
+  BacktestResponse,
+  SweepRequest,
+  SweepResponse,
+} from "./api/types";
 
 export type RunResult =
-  | { mode: "single"; response: BacktestResponse }
-  | { mode: "sweep"; response: SweepResponse; sweptKeys: string[] };
+  | {
+      mode: "single";
+      response: BacktestResponse;
+      request: BacktestRequest;
+    }
+  | {
+      mode: "sweep";
+      response: SweepResponse;
+      request: SweepRequest;
+      sweptKeys: string[];
+    };
 
 export default function App() {
   const [lastResult, setLastResult] = useState<RunResult | null>(null);

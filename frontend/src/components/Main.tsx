@@ -1,13 +1,29 @@
+import { useMemo, useState } from "react";
+
 import type { RunResult } from "../App";
+import type { RegimeSplitRequest } from "../api/types";
 import EquityChart from "./EquityChart";
 import MetricsTable from "./MetricsTable";
+import OOSDecayChart from "./OOSDecayChart";
 import PriceChart from "./PriceChart";
+import RegimeBreakdown from "./RegimeBreakdown";
 import SharpeHeatmap from "./SharpeHeatmap";
+import SignificancePanel from "./SignificancePanel";
 import SweepTable from "./SweepTable";
 
 interface MainProps {
   lastResult: RunResult | null;
 }
+
+type TabKey = "backtest" | "sweep" | "regimes" | "significance" | "walkforward";
+
+const TABS: Array<{ key: TabKey; label: string }> = [
+  { key: "backtest", label: "Backtest" },
+  { key: "sweep", label: "Sweep" },
+  { key: "regimes", label: "Regimes" },
+  { key: "significance", label: "Significance" },
+  { key: "walkforward", label: "Walk-forward" },
+];
 
 function fmtPct(v: unknown): string {
   if (v === null || v === undefined) return "—";
@@ -46,11 +62,45 @@ function PortfolioSummary({ metrics }: { metrics: Record<string, unknown> }) {
 }
 
 export default function Main({ lastResult }: MainProps) {
+  const [tab, setTab] = useState<TabKey>("backtest");
+
+  // Build a RegimeSplit request from the latest single backtest (if any).
+  const regimeReq: RegimeSplitRequest | null = useMemo(() => {
+    if (!lastResult || lastResult.mode !== "single") return null;
+    const r = lastResult.request;
+    return {
+      tickers: r.tickers,
+      start: r.start,
+      end: r.end,
+      interval: r.interval,
+      strategy: r.strategy,
+      params: r.params ?? {},
+      commission: r.commission,
+      slippage: r.slippage,
+    };
+  }, [lastResult]);
+
   return (
     <main className="flex-1 p-6 overflow-auto bg-white">
       <h1 className="text-xl font-semibold text-slate-800 mb-4">
         Algo Trading Research
       </h1>
+
+      <div className="border-b border-slate-200 mb-4 flex gap-1">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`px-3 py-1.5 text-sm border-b-2 -mb-px transition-colors ${
+              tab === t.key
+                ? "border-indigo-600 text-indigo-700 font-medium"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
 
       {!lastResult && (
         <div className="text-sm text-slate-400 italic">
@@ -58,7 +108,7 @@ export default function Main({ lastResult }: MainProps) {
         </div>
       )}
 
-      {lastResult?.mode === "single" && (
+      {tab === "backtest" && lastResult?.mode === "single" && (
         <div className="space-y-6">
           <section>
             <h2 className="text-sm font-medium text-slate-700 mb-2">
@@ -91,7 +141,13 @@ export default function Main({ lastResult }: MainProps) {
         </div>
       )}
 
-      {lastResult?.mode === "sweep" && (
+      {tab === "backtest" && lastResult?.mode === "sweep" && (
+        <div className="text-sm text-slate-500 italic">
+          The latest run was a sweep — switch to the "Sweep" tab.
+        </div>
+      )}
+
+      {tab === "sweep" && lastResult?.mode === "sweep" && (
         <div className="space-y-6">
           <section>
             <h2 className="text-sm font-medium text-slate-700 mb-2">
@@ -120,6 +176,45 @@ export default function Main({ lastResult }: MainProps) {
             )}
           </section>
         </div>
+      )}
+
+      {tab === "sweep" && lastResult?.mode !== "sweep" && (
+        <div className="text-sm text-slate-500 italic">
+          The latest run wasn't a sweep — run one in Sweep mode to populate this
+          tab.
+        </div>
+      )}
+
+      {tab === "regimes" && (
+        <section>
+          <h2 className="text-sm font-medium text-slate-700 mb-2">
+            Regime breakdown
+          </h2>
+          <p className="text-xs text-slate-500 mb-3">
+            Splits the latest single-backtest returns by trend / volatility /
+            drawdown regimes (derived from SPY + VIX). Requires both symbols to
+            be backfilled.
+          </p>
+          <RegimeBreakdown request={regimeReq} />
+        </section>
+      )}
+
+      {tab === "significance" && (
+        <section>
+          <h2 className="text-sm font-medium text-slate-700 mb-2">
+            Significance
+          </h2>
+          <SignificancePanel lastResult={lastResult} />
+        </section>
+      )}
+
+      {tab === "walkforward" && (
+        <section>
+          <h2 className="text-sm font-medium text-slate-700 mb-2">
+            Walk-forward
+          </h2>
+          <OOSDecayChart lastResult={lastResult} />
+        </section>
       )}
     </main>
   );
