@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 
-import type { RunResult } from "../App";
+import type { RunResult, SelectedTrade } from "../App";
 import type { RegimeSplitRequest } from "../api/types";
 import EquityChart from "./EquityChart";
 import MetricsTable from "./MetricsTable";
@@ -13,6 +13,8 @@ import SweepTable from "./SweepTable";
 
 interface MainProps {
   lastResult: RunResult | null;
+  selectedTrade: SelectedTrade | null;
+  onSelectTrade: (t: SelectedTrade | null) => void;
 }
 
 type TabKey = "backtest" | "sweep" | "regimes" | "significance" | "walkforward";
@@ -61,7 +63,7 @@ function PortfolioSummary({ metrics }: { metrics: Record<string, unknown> }) {
   );
 }
 
-export default function Main({ lastResult }: MainProps) {
+export default function Main({ lastResult, selectedTrade: _selectedTrade, onSelectTrade: _onSelectTrade }: MainProps) {
   const [tab, setTab] = useState<TabKey>("backtest");
 
   // Build a RegimeSplit request from the latest single backtest (if any).

@@ -1,13 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
-import { getStrategies, getTickers, runBacktest, runSweep } from "../api/client";
+import {
+  backtestExplain,
+  getStrategies,
+  getTickers,
+  runBacktest,
+  runSweep,
+} from "../api/client";
 import type {
   BacktestRequest,
   StrategyInfo,
   SweepRequest,
 } from "../api/types";
 import type { RunResult } from "../App";
+
+// The single explainable strategy currently wired to /backtest/explain.
+// Keeping this as a const so the check is greppable and lives next to the
+// only call-site.
+const EXPLAINABLE_STRATEGY = "combined_explainable";
 
 type RunMode = "single" | "sweep";
 
@@ -124,8 +135,32 @@ export default function Sidebar({ onResult }: SidebarProps) {
     },
   });
 
-  const isPending = singleMutation.isPending || sweepMutation.isPending;
-  const isError = singleMutation.isError || sweepMutation.isError;
+  // Same shape as singleMutation but routed through /backtest/explain so we
+  // also receive the per-trade explanation list. The standard backtest fields
+  // are unchanged, so the other tabs render identically.
+  const explainMutation = useMutation({
+    mutationFn: (req: BacktestRequest) => backtestExplain(req),
+    onSuccess: (data, vars) => {
+      const { explanations, ...response } = data;
+      onResult({
+        mode: "single",
+        response,
+        request: vars,
+        explanations,
+      });
+    },
+    onError: (err) => {
+      // eslint-disable-next-line no-console
+      console.error("/backtest/explain error:", err);
+    },
+  });
+
+  const isPending =
+    singleMutation.isPending ||
+    sweepMutation.isPending ||
+    explainMutation.isPending;
+  const isError =
+    singleMutation.isError || sweepMutation.isError || explainMutation.isError;
 
   function onRun() {
     if (selectedTickers.length === 0 || !strategyName) {
@@ -157,6 +192,10 @@ export default function Sidebar({ onResult }: SidebarProps) {
       strategy: strategyName,
       params,
     };
+    if (strategyName === EXPLAINABLE_STRATEGY) {
+      explainMutation.mutate(req);
+      return;
+    }
     singleMutation.mutate(req);
   }
 
