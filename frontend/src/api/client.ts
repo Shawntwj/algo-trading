@@ -3,10 +3,12 @@ import axios from "axios";
 import type {
   AttributionRequest,
   AttributionResponse,
+  BacktestExplainResponse,
   BacktestRequest,
   BacktestResponse,
   BenchmarkRequest,
   BenchmarkResponse,
+  ExplanationSchema,
   HealthResponse,
   RegimeSplitRequest,
   RegimeSplitResponse,
@@ -84,4 +86,37 @@ export async function runRegimesSplit(
 ): Promise<RegimeSplitResponse> {
   const { data } = await http.post<RegimeSplitResponse>("/regimes/split", req);
   return data;
+}
+
+// ─── Explainable backtest (Task 4) ────────────────────────────────────────
+// POST /backtest/explain — same body as /backtest, only valid for
+// `combined_explainable`. Returns the standard backtest payload plus a
+// per-trade `explanations` array.
+export async function backtestExplain(
+  req: BacktestRequest,
+): Promise<BacktestExplainResponse> {
+  const { data } = await http.post<BacktestExplainResponse>(
+    "/backtest/explain",
+    req,
+  );
+  return data;
+}
+
+// GET /strategies/{name}/explanation_schema — 404 for strategies that don't
+// expose an explanation contract. We swallow the 404 to `null` so callers can
+// treat "no schema" as the common case instead of an error.
+export async function strategyExplanationSchema(
+  name: string,
+): Promise<ExplanationSchema | null> {
+  try {
+    const { data } = await http.get<ExplanationSchema>(
+      `/strategies/${encodeURIComponent(name)}/explanation_schema`,
+    );
+    return data;
+  } catch (err: unknown) {
+    if (axios.isAxiosError(err) && err.response?.status === 404) {
+      return null;
+    }
+    throw err;
+  }
 }

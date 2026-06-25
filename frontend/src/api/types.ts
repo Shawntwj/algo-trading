@@ -201,3 +201,38 @@ export interface RegimeSplitResponse {
   strategy: string;
   regimes: RegimeStat[];
 }
+
+// ─── Combined-explainable (Task 4a) ───────────────────────────────────────
+// Mirrors api/schemas.py::TradeExplanationModel. The `direction` field is a
+// stringly-typed enum on the backend (long_entry | long_exit | short_entry |
+// short_exit); we narrow it here for autocomplete but keep `string` as the
+// escape hatch if the backend grows new directions.
+export type TradeDirection =
+  | "long_entry"
+  | "long_exit"
+  | "short_entry"
+  | "short_exit";
+
+export interface TradeExplanation {
+  ticker: string;
+  timestamp: string;
+  direction: TradeDirection | string;
+  weights: Record<string, number>;
+  child_signals: Record<string, number>;
+  summary: string;
+}
+
+// /backtest/explain returns the standard BacktestResponse fields PLUS the
+// `explanations` array.
+export interface BacktestExplainResponse extends BacktestResponse {
+  explanations: TradeExplanation[];
+}
+
+// /strategies/{name}/explanation_schema → JSON Schema describing one
+// TradeExplanation entry, plus the child-strategy names the explanation will
+// reference. 404 for strategies that don't implement the explanation contract.
+export interface ExplanationSchema {
+  strategy: string;
+  schema: Record<string, unknown>;
+  children: string[];
+}
