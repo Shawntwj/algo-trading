@@ -12,6 +12,8 @@ from .schemas import (
     BenchmarkRequest,
     BenchmarkResponse,
     HealthResponse,
+    StatsRequest,
+    StatsResponse,
     StrategyInfo,
     SweepRequest,
     SweepResponse,
@@ -101,6 +103,30 @@ def benchmarks(req: BenchmarkRequest) -> BenchmarkResponse:
         log.exception("benchmarks failed")
         raise HTTPException(status_code=500, detail=str(exc))
     return BenchmarkResponse(**payload)
+
+
+@app.post("/stats", response_model=StatsResponse)
+def stats_endpoint(req: StatsRequest) -> StatsResponse:
+    """Significance statistics (BRIEF Task 7b) for a single returns series.
+
+    Pure compute — no DB hit. Caller supplies a vector of periodic returns and
+    receives Sharpe / PSR / max-DD / total return with stationary-bootstrap CIs.
+    """
+    try:
+        payload = services.run_stats(
+            returns=req.returns,
+            sr_benchmark=req.sr_benchmark,
+            periods_per_year=req.periods_per_year,
+            n_resamples=req.n_resamples,
+            alpha=req.alpha,
+            seed=req.seed,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        log.exception("stats failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+    return StatsResponse(**payload)
 
 
 @app.post("/sweep", response_model=SweepResponse)

@@ -267,6 +267,57 @@ def run_benchmarks(
     return {"weights": weights, "tickers": tickers, "curves": curves}
 
 
+# ─── Stats ──────────────────────────────────────────────────────────────────
+def run_stats(
+    *,
+    returns: list[float],
+    sr_benchmark: float = 0.0,
+    periods_per_year: int = 252,
+    n_resamples: int = 1000,
+    alpha: float = 0.05,
+    seed: int = 42,
+) -> dict[str, Any]:
+    """Compute Sharpe / PSR / max-DD / total return with bootstrap CIs."""
+    from backtest.stats import (  # local import — keeps cold-start lean
+        annualised_sharpe,
+        max_drawdown,
+        max_drawdown_ci,
+        probabilistic_sharpe_ratio,
+        sharpe_ci,
+        total_return_ci,
+    )
+
+    arr = np.asarray(returns, dtype=float)
+    sharpe = annualised_sharpe(arr, periods_per_year=periods_per_year)
+    psr = probabilistic_sharpe_ratio(
+        arr, sr_benchmark=sr_benchmark, periods_per_year=periods_per_year
+    )
+
+    s_pt, s_lo, s_hi = sharpe_ci(
+        arr,
+        periods_per_year=periods_per_year,
+        n_resamples=n_resamples,
+        alpha=alpha,
+        seed=seed,
+    )
+    dd_pt, dd_lo, dd_hi = max_drawdown_ci(
+        arr, n_resamples=n_resamples, alpha=alpha, seed=seed
+    )
+    tr_pt, tr_lo, tr_hi = total_return_ci(
+        arr, n_resamples=n_resamples, alpha=alpha, seed=seed
+    )
+
+    return {
+        "sharpe": _jsonable(sharpe),
+        "sharpe_ci": {"point": _jsonable(s_pt), "low": _jsonable(s_lo), "high": _jsonable(s_hi)},
+        "psr": _jsonable(psr),
+        "max_dd": _jsonable(max_drawdown(np.cumprod(1.0 + arr))),
+        "max_dd_ci": {"point": _jsonable(dd_pt), "low": _jsonable(dd_lo), "high": _jsonable(dd_hi)},
+        "total_return": _jsonable(float(np.prod(1.0 + arr) - 1.0)),
+        "total_return_ci": {"point": _jsonable(tr_pt), "low": _jsonable(tr_lo), "high": _jsonable(tr_hi)},
+    }
+
+
 # ─── Health ─────────────────────────────────────────────────────────────────
 def clickhouse_health() -> str:
     """Return 'ok' / 'down' — never raises."""

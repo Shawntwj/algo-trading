@@ -156,6 +156,46 @@ def test_benchmarks_returns_equity_curve():
     assert "timestamp" in pt and "value" in pt
 
 
+def test_stats_returns_metrics_with_cis():
+    """`/stats` is pure compute — no ClickHouse dependency, never skipped."""
+    import numpy as np
+
+    rng = np.random.default_rng(0)
+    # 1 year of daily returns with a positive drift.
+    returns = rng.normal(0.0008, 0.01, size=252).tolist()
+    r = client.post(
+        "/stats",
+        json={
+            "returns": returns,
+            "sr_benchmark": 0.0,
+            "periods_per_year": 252,
+            "n_resamples": 200,
+            "alpha": 0.05,
+            "seed": 7,
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    # Top-level scalars present and finite (PSR is a probability in [0, 1]).
+    assert "sharpe" in body and isinstance(body["sharpe"], float)
+    assert "psr" in body and 0.0 <= body["psr"] <= 1.0
+    assert "max_dd" in body and body["max_dd"] <= 0.0
+    assert "total_return" in body and isinstance(body["total_return"], float)
+    # CI blocks have the right shape and brackets are well-ordered.
+    for key in ("sharpe_ci", "max_dd_ci", "total_return_ci"):
+        block = body[key]
+        assert set(block) == {"point", "low", "high"}, key
+        assert block["low"] <= block["point"] <= block["high"], key
+
+
+def test_stats_rejects_too_few_returns():
+    r = client.post(
+        "/stats",
+        json={"returns": [0.01], "periods_per_year": 252},
+    )
+    assert r.status_code == 422
+
+
 def test_benchmarks_rejects_bad_weights():
     r = client.post(
         "/benchmarks",

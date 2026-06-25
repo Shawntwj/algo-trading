@@ -104,3 +104,47 @@ class BenchmarkResponse(BaseModel):
     weights: str
     tickers: list[str]
     curves: list[BenchmarkCurve]
+
+
+# ─── Stats ──────────────────────────────────────────────────────────────────
+class StatsRequest(BaseModel):
+    returns: list[float] = Field(
+        min_length=2,
+        description="Simple periodic returns (NOT equity, NOT log returns).",
+    )
+    sr_benchmark: float = Field(
+        default=0.0,
+        description="Annualised Sharpe threshold for PSR; defaults to 0.",
+    )
+    periods_per_year: int = Field(
+        default=252,
+        description="Annualisation factor. 252 for daily; pass 252*78 for 5-min RTH.",
+    )
+    n_resamples: int = Field(
+        default=1000,
+        ge=100,
+        description="Number of bootstrap resamples for the CIs.",
+    )
+    alpha: float = Field(
+        default=0.05,
+        gt=0.0,
+        lt=1.0,
+        description="(1 - alpha) confidence level for bootstrap CIs.",
+    )
+    seed: int = Field(default=42, description="Bootstrap RNG seed (reproducibility).")
+
+
+class CIBlock(BaseModel):
+    point: float
+    low: float
+    high: float
+
+
+class StatsResponse(BaseModel):
+    sharpe: float
+    sharpe_ci: CIBlock
+    psr: float
+    max_dd: float
+    max_dd_ci: CIBlock
+    total_return: float
+    total_return_ci: CIBlock
