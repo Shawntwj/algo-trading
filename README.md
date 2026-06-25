@@ -14,6 +14,22 @@ orchestration, vectorbt for backtests, and a React + FastAPI research SPA.
 - **Orchestration**: Dagster (`workspace.yaml`).
 - **Backtests**: vectorbt via `backtest/`.
 
+### Evaluation UI (Task 7d)
+
+The Main panel is tabbed:
+
+- **Backtest** — per-ticker metrics table with a "?" hover on each metric
+  revealing its 95% confidence interval (`/stats`), equity curves, price +
+  entry/exit markers.
+- **Sweep** — sweep table + Sharpe heatmap when exactly two params are swept.
+- **Regimes** — splits the latest single-backtest returns by trend / volatility
+  / drawdown regimes via `/regimes/split` (requires `SPY` and `^VIX` to be
+  backfilled).
+- **Significance** — PSR + DSR (Deflated Sharpe) badge; green when DSR > 0.95.
+  Trial count and σ(Sharpe) are derived from the prior sweep when present.
+- **Walk-forward** — train/test inputs + `/walkforward` scatter of IS vs OOS
+  fold Sharpes with a y=x reference line; warns if decay slope < 0.3.
+
 ## Quickstart
 
 ```bash
