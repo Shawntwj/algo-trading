@@ -249,3 +249,43 @@ class RegimeStat(BaseModel):
 class RegimeSplitResponse(BaseModel):
     strategy: str
     regimes: list[RegimeStat]
+
+
+# ─── Combined explainable (Task 4a) ────────────────────────────────────────
+class TradeExplanationModel(BaseModel):
+    """JSON-safe shape of a backtest.explainability.TradeExplanation."""
+
+    ticker: str
+    timestamp: str
+    direction: str = Field(
+        description="long_entry | long_exit | short_entry | short_exit"
+    )
+    weights: dict[str, float]
+    child_signals: dict[str, float]
+    summary: str
+
+
+class BacktestExplainResponse(BacktestResponse):
+    """BacktestResponse + per-trade explanation list (Task 4a only)."""
+
+    explanations: list[TradeExplanationModel]
+
+
+class ExplanationSchemaResponse(BaseModel):
+    """JSON Schema (Draft 2020-12) describing the explanation object.
+
+    Frontend (Task 4b) uses this to render fields generically. Only emitted
+    for strategies that implement the explanation contract — currently just
+    ``combined_explainable``.
+    """
+
+    strategy: str
+    schema_: dict[str, Any] = Field(
+        alias="schema",
+        description="JSON Schema for one TradeExplanation entry.",
+    )
+    children: list[str] = Field(
+        description="Names of the child strategies the explanation will reference."
+    )
+
+    model_config = {"populate_by_name": True}

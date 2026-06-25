@@ -9,10 +9,12 @@ from . import services
 from .schemas import (
     AttributionRequest,
     AttributionResponse,
+    BacktestExplainResponse,
     BacktestRequest,
     BacktestResponse,
     BenchmarkRequest,
     BenchmarkResponse,
+    ExplanationSchemaResponse,
     HealthResponse,
     RegimeSplitRequest,
     RegimeSplitResponse,
@@ -224,6 +226,61 @@ def regimes_split_endpoint(req: RegimeSplitRequest) -> RegimeSplitResponse:
         log.exception("regimes_split failed")
         raise HTTPException(status_code=500, detail=str(exc))
     return RegimeSplitResponse(**payload)
+
+
+@app.post("/backtest/explain", response_model=BacktestExplainResponse)
+def backtest_explain(req: BacktestRequest) -> BacktestExplainResponse:
+    """Run a combined_explainable backtest and return per-trade explanations.
+
+    Hard-coded to combined_explainable: the explanation contract only exists
+    on that strategy. The endpoint accepts the standard BacktestRequest body
+    so the UI can reuse the same form, but ``req.strategy`` is ignored —
+    the server will always run combined_explainable.
+    """
+    try:
+        payload = services.run_backtest_explain(
+            tickers=req.tickers,
+            start=req.start,
+            end=req.end,
+            interval=req.interval,
+            params=req.params,
+            commission=req.commission,
+            slippage=req.slippage,
+        )
+    except KeyError:
+        raise HTTPException(
+            status_code=500,
+            detail="combined_explainable is not registered. This is a bug.",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        log.exception("backtest_explain failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+    return BacktestExplainResponse(**payload)
+
+
+@app.get(
+    "/strategies/{name}/explanation_schema",
+    response_model=ExplanationSchemaResponse,
+)
+def explanation_schema(name: str) -> ExplanationSchemaResponse:
+    """JSON schema of the per-trade explanation object for a strategy.
+
+    Implemented only for combined_explainable today; other strategies
+    return 404 with a message pointing at the right endpoint.
+    """
+    try:
+        payload = services.get_explanation_schema(name)
+    except KeyError:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Strategy {name!r} does not expose an explanation schema. "
+                "Only 'combined_explainable' implements it today."
+            ),
+        )
+    return ExplanationSchemaResponse(**payload)
 
 
 @app.post("/sweep", response_model=SweepResponse)

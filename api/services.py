@@ -525,6 +525,101 @@ def run_regime_split(
     return {"strategy": strategy, "regimes": rows}
 
 
+# ─── Combined explainable (Task 4a) ─────────────────────────────────────────
+def run_backtest_explain(
+    *,
+    tickers: list[str],
+    start: str,
+    end: str,
+    interval: str,
+    params: dict[str, Any],
+    commission: float,
+    slippage: float,
+) -> dict[str, Any]:
+    """Run combined_explainable end-to-end and return the standard payload
+    plus the per-trade explanation stream.
+
+    The endpoint is hard-coded to combined_explainable because the
+    explanation contract only exists on that strategy. Other strategies
+    do not persist a per-bar log.
+    """
+    from backtest.explainability import explain_trades
+
+    strat_cls = REGISTRY["combined_explainable"]
+    wide = load_wide(tickers, start, end, interval)
+    strat = strat_cls(**params)
+    result = run_backtest(
+        wide,
+        strat,
+        commission=commission,
+        slippage=slippage,
+        freq=_interval_to_freq(interval),
+    )
+    payload = serialize_backtest(result, wide)
+    # serialize_backtest re-instantiates the strategy internally; the
+    # explanation log we want lives on the *first* strat that we ran
+    # through run_backtest. Re-run a quick signal pass on the original
+    # strat (already done above), and pull its log.
+    explanations = explain_trades(result, strat)
+    payload["explanations"] = [e.as_dict() for e in explanations]
+    return payload
+
+
+def get_explanation_schema(strategy: str) -> dict[str, Any]:
+    """Return the JSON schema of a TradeExplanation for `strategy`.
+
+    Only implemented for combined_explainable. Other strategy names raise
+    KeyError so the FastAPI handler can map to 404 with a clear message.
+    """
+    if strategy != "combined_explainable":
+        raise KeyError(strategy)
+
+    strat_cls = REGISTRY["combined_explainable"]
+    default_children = list(strat_cls().children)
+    # Draft 2020-12-flavoured JSON Schema. Hand-rolled so the frontend
+    # doesn't need pydantic-on-the-wire.
+    schema = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "TradeExplanation",
+        "type": "object",
+        "required": [
+            "ticker",
+            "timestamp",
+            "direction",
+            "weights",
+            "child_signals",
+            "summary",
+        ],
+        "properties": {
+            "ticker": {"type": "string"},
+            "timestamp": {"type": "string", "format": "date-time"},
+            "direction": {
+                "type": "string",
+                "enum": ["long_entry", "long_exit", "short_entry", "short_exit"],
+            },
+            "weights": {
+                "type": "object",
+                "additionalProperties": {"type": "number"},
+                "description": "Weight per child strategy at this bar; sums to 1.",
+            },
+            "child_signals": {
+                "type": "object",
+                "additionalProperties": {"type": "number"},
+                "description": "Normalised signal value per child at this bar.",
+            },
+            "summary": {
+                "type": "string",
+                "description": "Plain-English one-line summary.",
+            },
+        },
+    }
+    return {
+        "strategy": strategy,
+        "schema": schema,
+        "children": default_children,
+    }
+
+
 # ─── Health ─────────────────────────────────────────────────────────────────
 def clickhouse_health() -> str:
     """Return 'ok' / 'down' — never raises."""
