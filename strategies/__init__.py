@@ -12,6 +12,7 @@ from .picker_clone import (
     PickerCloneScion,
     PickerCloneStrategy,
 )
+from .combined_explainable import CombinedExplainableStrategy
 
 REGISTRY: dict[str, type[Strategy]] = {
     "ma_crossover": MACrossover,
@@ -20,6 +21,7 @@ REGISTRY: dict[str, type[Strategy]] = {
     "macro_timing": MacroTimingXiong,
     "drift_regime": DriftRegimeSingha,
     **PICKER_CLONE_REGISTRY,
+    "combined_explainable": CombinedExplainableStrategy,
 }
 
 __all__ = [
@@ -36,5 +38,6 @@ __all__ = [
     "PickerCloneAppaloosa",
     "PickerCloneScion",
     "PICKER_CLONE_REGISTRY",
+    "CombinedExplainableStrategy",
     "REGISTRY",
 ]
