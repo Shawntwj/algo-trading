@@ -1,3 +1,6 @@
+# DEPRECATED: this Streamlit dashboard is superseded by the React + FastAPI stack.
+# Keep for reference until Task 5 (live runner) ships. New UI lives in /frontend, API in /api.
+# See README for `make dev`.
 from __future__ import annotations
 
 import sys

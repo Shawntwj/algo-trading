@@ -2,7 +2,31 @@
 
 A runnable MVP for **discovering trading signals**, iterating on strategies, and
 comparing them visually. Polars for data, ClickHouse for storage, Dagster for
-orchestration, vectorbt for backtests, Streamlit for the UI.
+orchestration, vectorbt for backtests, and a React + FastAPI research SPA.
+
+## Stack
+
+- **API**: FastAPI + Pydantic v2 (in `api/`) — wraps the vectorbt engine.
+- **Frontend**: Vite + React 18 + TypeScript + Tailwind (in `frontend/`).
+- **Data fetching / cache**: TanStack Query + axios.
+- **Tables**: TanStack Table v8. **Charts**: Recharts.
+- **Data**: Polars → ClickHouse (`ReplacingMergeTree`).
+- **Orchestration**: Dagster (`workspace.yaml`).
+- **Backtests**: vectorbt via `backtest/`.
+
+## Quickstart
+
+```bash
+make dev   # boots FastAPI on :8000 and Vite on :5173 in parallel
+```
+
+Open <http://localhost:5173>. Ctrl-C tears both servers down.
+
+`make test` runs `pytest` + the Vitest frontend smoke test.
+
+> The legacy **Streamlit dashboard** in `dashboard/app.py` is **deprecated** —
+> the React SPA above replaces it. The file is kept for reference until the
+> live-runner task ships.
 
 ```
 algo-trading/
@@ -59,17 +83,21 @@ A **daily schedule** (`daily_update_schedule`, 21:30 UTC, weekdays, disabled by
 default) calls `data.update_latest(...)` to refresh recent bars. Enable it from
 the Dagster UI when you're ready.
 
-## 4. Launch the dashboard
+## 4. Launch the UI
 
 ```bash
-streamlit run dashboard/app.py
+make dev   # FastAPI :8000 + Vite :5173
 ```
 
-In the sidebar:
-- pick tickers, date range, interval
+Then open <http://localhost:5173>. In the sidebar:
+- pick tickers, date range
 - pick a strategy
 - **Single** mode runs one config; **Sweep** mode runs the cartesian product
+  of the values you check per param
 - Sharpe heatmap appears when exactly 2 params are swept
+
+The deprecated Streamlit dashboard (`streamlit run dashboard/app.py`) still
+works but is no longer maintained.
 
 ## 5. Add a new strategy in one file
 

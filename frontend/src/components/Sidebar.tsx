@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
-import { getStrategies, getTickers, runBacktest } from "../api/client";
+import { getStrategies, getTickers, runBacktest, runSweep } from "../api/client";
 import type {
   BacktestRequest,
-  BacktestResponse,
   StrategyInfo,
+  SweepRequest,
 } from "../api/types";
+import type { RunResult } from "../App";
 
 type RunMode = "single" | "sweep";
 
 interface SidebarProps {
-  onResponse: (resp: BacktestResponse) => void;
+  onResult: (r: RunResult) => void;
 }
 
 function todayIso(): string {
@@ -24,7 +25,18 @@ function isoNYearsAgo(years: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-export default function Sidebar({ onResponse }: SidebarProps) {
+// Build a `{key: [selected vals]}` map, defaulting to all values in `param_grid`.
+function defaultGridSelection(
+  grid: Record<string, unknown[]>,
+): Record<string, unknown[]> {
+  const out: Record<string, unknown[]> = {};
+  for (const [k, vals] of Object.entries(grid)) {
+    out[k] = [...vals];
+  }
+  return out;
+}
+
+export default function Sidebar({ onResult }: SidebarProps) {
   const tickersQuery = useQuery({ queryKey: ["tickers"], queryFn: getTickers });
   const strategiesQuery = useQuery({
     queryKey: ["strategies"],
@@ -36,6 +48,9 @@ export default function Sidebar({ onResponse }: SidebarProps) {
   const [end, setEnd] = useState<string>(todayIso());
   const [strategyName, setStrategyName] = useState<string>("");
   const [params, setParams] = useState<Record<string, unknown>>({});
+  const [gridSelection, setGridSelection] = useState<Record<string, unknown[]>>(
+    {},
+  );
   const [mode, setMode] = useState<RunMode>("single");
 
   // Auto-pick first strategy + load defaults once data arrives.
@@ -44,6 +59,7 @@ export default function Sidebar({ onResponse }: SidebarProps) {
       const first = strategiesQuery.data[0];
       setStrategyName(first.name);
       setParams({ ...first.default_params });
+      setGridSelection(defaultGridSelection(first.param_grid));
     }
   }, [strategiesQuery.data, strategyName]);
 
@@ -55,7 +71,10 @@ export default function Sidebar({ onResponse }: SidebarProps) {
   function onStrategyChange(name: string) {
     setStrategyName(name);
     const next = strategiesQuery.data?.find((s) => s.name === name);
-    if (next) setParams({ ...next.default_params });
+    if (next) {
+      setParams({ ...next.default_params });
+      setGridSelection(defaultGridSelection(next.param_grid));
+    }
   }
 
   function onParamChange(key: string, raw: string, isNumber: boolean) {
@@ -71,12 +90,33 @@ export default function Sidebar({ onResponse }: SidebarProps) {
     );
   }
 
-  const mutation = useMutation({
+  function toggleGridValue(key: string, val: unknown) {
+    setGridSelection((prev) => {
+      const cur = prev[key] ?? [];
+      const has = cur.some((x) => x === val);
+      const next = has ? cur.filter((x) => x !== val) : [...cur, val];
+      return { ...prev, [key]: next };
+    });
+  }
+
+  const sweepMutation = useMutation({
+    mutationFn: (req: SweepRequest) => runSweep(req),
+    onSuccess: (data, vars) => {
+      const sweptKeys = Object.entries(vars.grid ?? {})
+        .filter(([, vals]) => (vals as unknown[]).length > 1)
+        .map(([k]) => k);
+      onResult({ mode: "sweep", response: data, sweptKeys });
+    },
+    onError: (err) => {
+      // eslint-disable-next-line no-console
+      console.error("/sweep error:", err);
+    },
+  });
+
+  const singleMutation = useMutation({
     mutationFn: (req: BacktestRequest) => runBacktest(req),
     onSuccess: (data) => {
-      // eslint-disable-next-line no-console
-      console.log("/backtest response:", data);
-      onResponse(data);
+      onResult({ mode: "single", response: data });
     },
     onError: (err) => {
       // eslint-disable-next-line no-console
@@ -84,16 +124,30 @@ export default function Sidebar({ onResponse }: SidebarProps) {
     },
   });
 
+  const isPending = singleMutation.isPending || sweepMutation.isPending;
+  const isError = singleMutation.isError || sweepMutation.isError;
+
   function onRun() {
-    if (mode === "sweep") {
-      // Task 1c will wire the sweep flow.
-      // eslint-disable-next-line no-console
-      console.warn("Sweep mode is a stub in Task 1b — no request sent.");
-      return;
-    }
     if (selectedTickers.length === 0 || !strategyName) {
       // eslint-disable-next-line no-console
       console.warn("Pick at least one ticker and a strategy before running.");
+      return;
+    }
+    if (mode === "sweep") {
+      // Strip empty axes — backend treats {} as "use defaults"; we want to send
+      // only the axes the user explicitly selected.
+      const grid: Record<string, unknown[]> = {};
+      for (const [k, vals] of Object.entries(gridSelection)) {
+        if (vals.length > 0) grid[k] = vals;
+      }
+      const req: SweepRequest = {
+        tickers: selectedTickers,
+        start,
+        end,
+        strategy: strategyName,
+        grid,
+      };
+      sweepMutation.mutate(req);
       return;
     }
     const req: BacktestRequest = {
@@ -103,7 +157,7 @@ export default function Sidebar({ onResponse }: SidebarProps) {
       strategy: strategyName,
       params,
     };
-    mutation.mutate(req);
+    singleMutation.mutate(req);
   }
 
   return (
@@ -180,8 +234,8 @@ export default function Sidebar({ onResponse }: SidebarProps) {
         </select>
       </section>
 
-      {currentStrategy && (
-        <section className="mb-5">
+      {currentStrategy && mode === "single" && (
+        <section className="mb-5" data-testid="params-form">
           <label className="block text-sm font-medium text-slate-700 mb-2">
             Params
           </label>
@@ -204,6 +258,51 @@ export default function Sidebar({ onResponse }: SidebarProps) {
                     }
                     onChange={(e) => onParamChange(key, e.target.value, isNumber)}
                   />
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {currentStrategy && mode === "sweep" && (
+        <section className="mb-5" data-testid="sweep-grid">
+          <label className="block text-sm font-medium text-slate-700 mb-2">
+            Sweep grid
+          </label>
+          <p className="text-xs text-slate-500 mb-2">
+            Check the values to include for each param. Cartesian product of the
+            checked values gets run.
+          </p>
+          <div className="space-y-3">
+            {Object.entries(currentStrategy.param_grid).map(([key, vals]) => {
+              const selected = gridSelection[key] ?? [];
+              return (
+                <div key={key}>
+                  <div className="text-xs font-mono text-slate-600 mb-1">{key}</div>
+                  <div className="flex flex-wrap gap-2">
+                    {vals.map((v) => {
+                      const isOn = selected.some((x) => x === v);
+                      return (
+                        <label
+                          key={String(v)}
+                          className={`px-2 py-0.5 text-xs rounded border cursor-pointer font-mono ${
+                            isOn
+                              ? "bg-indigo-600 text-white border-indigo-600"
+                              : "bg-white text-slate-700 border-slate-300"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="sr-only"
+                            checked={isOn}
+                            onChange={() => toggleGridValue(key, v)}
+                          />
+                          {String(v)}
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
               );
             })}
@@ -237,24 +336,19 @@ export default function Sidebar({ onResponse }: SidebarProps) {
             Sweep
           </label>
         </div>
-        {mode === "sweep" && (
-          <p className="text-xs text-amber-600 mt-1">
-            Sweep wiring lands in Task 1c.
-          </p>
-        )}
       </section>
 
       <button
         onClick={onRun}
-        disabled={mutation.isPending}
+        disabled={isPending}
         className="w-full bg-indigo-600 text-white text-sm font-medium rounded px-3 py-2 hover:bg-indigo-700 disabled:opacity-50"
       >
-        {mutation.isPending ? "Running…" : "Run"}
+        {isPending ? "Running…" : "Run"}
       </button>
 
-      {mutation.isError && (
+      {isError && (
         <p className="text-xs text-red-600 mt-2">
-          Backtest failed — check the console.
+          Run failed — check the console.
         </p>
       )}
     </aside>
