@@ -11,10 +11,18 @@ import {
   YAxis,
 } from "recharts";
 
+import type { SelectedTrade } from "../App";
 import type { TickerBacktest } from "../api/types";
 
 interface PriceChartProps {
   results: TickerBacktest[];
+  // Optional: when provided, entry/exit markers become clickable and emit the
+  // matching trade key. Without it, the chart behaves exactly as before.
+  selectedTrade?: SelectedTrade | null;
+  onSelectTrade?: (t: SelectedTrade | null) => void;
+  // When true, marker clicks are no-ops (used for non-explainable strategies
+  // — we still want the chart, just without the affordance).
+  explainable?: boolean;
 }
 
 interface LinePoint {
@@ -25,6 +33,11 @@ interface LinePoint {
 interface MarkerPoint {
   ts: number;
   value: number;
+  // Raw ISO timestamp from the backtest payload — preserved so click
+  // handlers can emit it back up unchanged (the chart converts to ms for
+  // recharts' time scale).
+  iso: string;
+  direction: "long_entry" | "long_exit";
 }
 
 // Backend currently returns equity_curve per ticker (not raw price). We plot
@@ -48,31 +61,121 @@ function nearestValue(curve: LinePoint[], targetTs: number): number | null {
 }
 
 // Up-pointing triangle for entries (green), down-pointing for exits (red).
-function UpTriangle(props: { cx?: number; cy?: number }) {
-  const { cx = 0, cy = 0 } = props;
+// Recharts passes the full marker payload to a custom shape, so we can read
+// the trade's iso timestamp + direction off `props.payload` and fire onClick
+// up to the parent. Selected markers get a thicker ring + brighter fill so
+// the user can see what they picked even after the side panel opens.
+interface TriangleProps {
+  cx?: number;
+  cy?: number;
+  payload?: MarkerPoint;
+  ticker?: string;
+  selectedTrade?: SelectedTrade | null;
+  onSelectTrade?: (t: SelectedTrade | null) => void;
+  explainable?: boolean;
+}
+
+function isSelected(
+  ticker: string | undefined,
+  marker: MarkerPoint | undefined,
+  selected: SelectedTrade | null | undefined,
+): boolean {
+  if (!ticker || !marker || !selected) return false;
   return (
-    <polygon
-      points={`${cx},${cy - 6} ${cx - 5},${cy + 4} ${cx + 5},${cy + 4}`}
-      fill="#059669"
-      stroke="#065f46"
-      strokeWidth={1}
-    />
+    selected.ticker === ticker &&
+    selected.timestamp === marker.iso &&
+    selected.direction === marker.direction
   );
 }
 
-function DownTriangle(props: { cx?: number; cy?: number }) {
-  const { cx = 0, cy = 0 } = props;
+function UpTriangle(props: TriangleProps) {
+  const {
+    cx = 0,
+    cy = 0,
+    payload,
+    ticker,
+    selectedTrade,
+    onSelectTrade,
+    explainable,
+  } = props;
+  const sel = isSelected(ticker, payload, selectedTrade);
+  const interactive = explainable && payload && ticker && onSelectTrade;
   return (
-    <polygon
-      points={`${cx},${cy + 6} ${cx - 5},${cy - 4} ${cx + 5},${cy - 4}`}
-      fill="#dc2626"
-      stroke="#7f1d1d"
-      strokeWidth={1}
-    />
+    <g
+      style={{ cursor: interactive ? "pointer" : "default" }}
+      onClick={
+        interactive
+          ? (e) => {
+              e.stopPropagation();
+              onSelectTrade!({
+                ticker: ticker!,
+                timestamp: payload!.iso,
+                direction: payload!.direction,
+              });
+            }
+          : undefined
+      }
+    >
+      {sel && (
+        <circle cx={cx} cy={cy} r={9} fill="none" stroke="#059669" strokeWidth={2} />
+      )}
+      <polygon
+        points={`${cx},${cy - 6} ${cx - 5},${cy + 4} ${cx + 5},${cy + 4}`}
+        fill={sel ? "#10b981" : "#059669"}
+        stroke="#065f46"
+        strokeWidth={sel ? 1.5 : 1}
+      />
+    </g>
   );
 }
 
-export default function PriceChart({ results }: PriceChartProps) {
+function DownTriangle(props: TriangleProps) {
+  const {
+    cx = 0,
+    cy = 0,
+    payload,
+    ticker,
+    selectedTrade,
+    onSelectTrade,
+    explainable,
+  } = props;
+  const sel = isSelected(ticker, payload, selectedTrade);
+  const interactive = explainable && payload && ticker && onSelectTrade;
+  return (
+    <g
+      style={{ cursor: interactive ? "pointer" : "default" }}
+      onClick={
+        interactive
+          ? (e) => {
+              e.stopPropagation();
+              onSelectTrade!({
+                ticker: ticker!,
+                timestamp: payload!.iso,
+                direction: payload!.direction,
+              });
+            }
+          : undefined
+      }
+    >
+      {sel && (
+        <circle cx={cx} cy={cy} r={9} fill="none" stroke="#dc2626" strokeWidth={2} />
+      )}
+      <polygon
+        points={`${cx},${cy + 6} ${cx - 5},${cy - 4} ${cx + 5},${cy - 4}`}
+        fill={sel ? "#ef4444" : "#dc2626"}
+        stroke="#7f1d1d"
+        strokeWidth={sel ? 1.5 : 1}
+      />
+    </g>
+  );
+}
+
+export default function PriceChart({
+  results,
+  selectedTrade,
+  onSelectTrade,
+  explainable = false,
+}: PriceChartProps) {
   const [activeTicker, setActiveTicker] = useState<string>(
     results[0]?.ticker ?? "",
   );
@@ -85,19 +188,22 @@ export default function PriceChart({ results }: PriceChartProps) {
       .map((p) => ({ ts: new Date(p.timestamp).getTime(), value: p.value }))
       .filter((p) => Number.isFinite(p.ts) && Number.isFinite(p.value));
 
-    const toMarker = (ts: string): MarkerPoint | null => {
+    const toMarker = (
+      ts: string,
+      direction: "long_entry" | "long_exit",
+    ): MarkerPoint | null => {
       const t = new Date(ts).getTime();
       if (!Number.isFinite(t)) return null;
       const v = nearestValue(linePts, t);
       if (v === null) return null;
-      return { ts: t, value: v };
+      return { ts: t, value: v, iso: ts, direction };
     };
 
     const ent = active.entries
-      .map(toMarker)
+      .map((ts) => toMarker(ts, "long_entry"))
       .filter((x): x is MarkerPoint => x !== null);
     const ext = active.exits
-      .map(toMarker)
+      .map((ts) => toMarker(ts, "long_exit"))
       .filter((x): x is MarkerPoint => x !== null);
     return { line: linePts, entries: ent, exits: ext };
   }, [active]);
@@ -172,13 +278,29 @@ export default function PriceChart({ results }: PriceChartProps) {
               name="entries"
               data={entries}
               dataKey="value"
-              shape={<UpTriangle />}
+              shape={(props: unknown) => (
+                <UpTriangle
+                  {...(props as TriangleProps)}
+                  ticker={active.ticker}
+                  selectedTrade={selectedTrade}
+                  onSelectTrade={onSelectTrade}
+                  explainable={explainable}
+                />
+              )}
             />
             <Scatter
               name="exits"
               data={exits}
               dataKey="value"
-              shape={<DownTriangle />}
+              shape={(props: unknown) => (
+                <DownTriangle
+                  {...(props as TriangleProps)}
+                  ticker={active.ticker}
+                  selectedTrade={selectedTrade}
+                  onSelectTrade={onSelectTrade}
+                  explainable={explainable}
+                />
+              )}
             />
           </ComposedChart>
         </ResponsiveContainer>

@@ -63,7 +63,13 @@ function PortfolioSummary({ metrics }: { metrics: Record<string, unknown> }) {
   );
 }
 
-export default function Main({ lastResult, selectedTrade: _selectedTrade, onSelectTrade: _onSelectTrade }: MainProps) {
+export default function Main({ lastResult, selectedTrade, onSelectTrade }: MainProps) {
+  // Convenience: derive the explainable flag once. The Explain tab + the
+  // PriceChart marker affordance both key off it.
+  const explainable =
+    lastResult?.mode === "single" &&
+    (lastResult.explanations !== undefined ||
+      lastResult.request.strategy === "combined_explainable");
   const [tab, setTab] = useState<TabKey>("backtest");
 
   // Build a RegimeSplit request from the latest single backtest (if any).
@@ -138,7 +144,19 @@ export default function Main({ lastResult, selectedTrade: _selectedTrade, onSele
             <h2 className="text-sm font-medium text-slate-700 mb-2">
               Price + entry/exit markers
             </h2>
-            <PriceChart results={lastResult.response.results} />
+            <PriceChart
+              results={lastResult.response.results}
+              selectedTrade={selectedTrade}
+              onSelectTrade={onSelectTrade}
+              explainable={Boolean(explainable)}
+            />
+            {explainable && (
+              <p className="text-xs text-slate-500 mt-1">
+                Click a triangle marker to open its explanation in the
+                <span className="font-medium"> Explain </span>
+                tab.
+              </p>
+            )}
           </section>
         </div>
       )}
