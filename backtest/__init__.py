@@ -4,6 +4,13 @@ from .sweep import sweep
 from .benchmarks import buy_and_hold, buy_and_hold_spy, random_entry_monte_carlo
 from .regimes import tag_trend, tag_volatility, tag_drawdown, tag_all
 from .regime_split import split_stats_by_regime
+from .walkforward import (
+    FoldResult,
+    WalkForwardConfig,
+    aggregate_walkforward,
+    walk_forward,
+)
+from .attribution import child_signal_attribution, market_attribution
 
 __all__ = [
     "run_backtest",
@@ -20,4 +27,10 @@ __all__ = [
     "tag_drawdown",
     "tag_all",
     "split_stats_by_regime",
+    "FoldResult",
+    "WalkForwardConfig",
+    "aggregate_walkforward",
+    "walk_forward",
+    "child_signal_attribution",
+    "market_attribution",
 ]

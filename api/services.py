@@ -318,6 +318,125 @@ def run_stats(
     }
 
 
+# ─── Walk-forward (Task 7c) ─────────────────────────────────────────────────
+def run_walkforward(
+    *,
+    tickers: list[str],
+    start: str,
+    end: str,
+    interval: str,
+    strategy: str,
+    grid: dict[str, list[Any]],
+    train_size: int,
+    test_size: int,
+    step: int | None,
+    mode: str,
+    min_train: int | None,
+    periods_per_year: int,
+    commission: float,
+    slippage: float,
+    n_resamples: int,
+    alpha: float,
+    seed: int,
+) -> dict[str, Any]:
+    """Wire the walk-forward harness to the API surface.
+
+    Hits ClickHouse for bars, runs `walk_forward` + `aggregate_walkforward`,
+    then JSON-scrubs the aggregate (NaN → None) so the response is valid JSON.
+    """
+    from backtest.walkforward import (  # local import — keeps cold-start lean
+        WalkForwardConfig,
+        aggregate_walkforward,
+        walk_forward,
+    )
+
+    strat_cls = get_strategy_class(strategy)
+    wide = load_wide(tickers, start, end, interval)
+    cfg = WalkForwardConfig(
+        train_size=train_size,
+        test_size=test_size,
+        step=step,
+        mode=mode,  # type: ignore[arg-type]
+        min_train=min_train,
+    )
+    folds = walk_forward(
+        strat_cls,
+        wide,
+        param_grid=grid or strat_cls.param_grid(),
+        config=cfg,
+        periods_per_year=periods_per_year,
+        backtest_kwargs={
+            "commission": commission,
+            "slippage": slippage,
+            "freq": _interval_to_freq(interval),
+        },
+    )
+    agg = aggregate_walkforward(
+        folds,
+        periods_per_year=periods_per_year,
+        n_resamples=n_resamples,
+        alpha=alpha,
+        seed=seed,
+    )
+    lo, hi = agg["oos_sharpe_ci"]
+    mean = agg["oos_sharpe_mean"]
+    return {
+        "n_folds": agg["n_folds"],
+        "oos_sharpe_mean": _jsonable(mean),
+        "oos_sharpe_ci": {
+            "point": _jsonable(mean),
+            "low": _jsonable(lo),
+            "high": _jsonable(hi),
+        },
+        "decay_slope": _jsonable(agg["decay_slope"]),
+        # is_vs_oos: list of [IS, OOS] pairs; NaN → None.
+        "is_vs_oos": [[_jsonable(a), _jsonable(b)] for a, b in agg["is_vs_oos"]],
+        "folds": [
+            {
+                "fold_idx": f.fold_idx,
+                "train_start": f.train_start,
+                "train_end": f.train_end,
+                "test_start": f.test_start,
+                "test_end": f.test_end,
+                "in_sample_sharpe": _jsonable(f.in_sample_sharpe),
+                "out_of_sample_sharpe": _jsonable(f.out_of_sample_sharpe),
+                # Strategy params are already JSON-friendly (int/float/str).
+                "selected_params": dict(f.selected_params),
+            }
+            for f in folds
+        ],
+    }
+
+
+# ─── Attribution (Task 7c) ──────────────────────────────────────────────────
+def run_attribution(
+    *,
+    strategy_returns: list[float],
+    market_returns: list[float],
+    risk_free: float = 0.0,
+    periods_per_year: int = 252,
+) -> dict[str, Any]:
+    """Pure-compute CAPM regression — no DB hit. Synthetic-array friendly."""
+    from backtest.attribution import market_attribution  # local import
+
+    out = market_attribution(
+        np.asarray(strategy_returns, dtype=float),
+        np.asarray(market_returns, dtype=float),
+        risk_free=risk_free,
+        periods_per_year=periods_per_year,
+    )
+    # `residual_returns` / `systematic_returns` are large arrays — the brief
+    # only asks for the scalar block, so we drop them from the API surface.
+    return {
+        "alpha": _jsonable(out["alpha"]),
+        "alpha_annualised": _jsonable(out["alpha_annualised"]),
+        "beta": _jsonable(out["beta"]),
+        "alpha_t_stat": _jsonable(out["alpha_t_stat"]),
+        "r_squared": _jsonable(out["r_squared"]),
+        "n_obs": int(out["n_obs"]),
+    }
+
+
 # ─── Health ─────────────────────────────────────────────────────────────────
 def clickhouse_health() -> str:
     """Return 'ok' / 'down' — never raises."""

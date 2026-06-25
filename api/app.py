@@ -7,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import services
 from .schemas import (
+    AttributionRequest,
+    AttributionResponse,
     BacktestRequest,
     BacktestResponse,
     BenchmarkRequest,
@@ -17,6 +19,8 @@ from .schemas import (
     StrategyInfo,
     SweepRequest,
     SweepResponse,
+    WalkForwardRequest,
+    WalkForwardResponse,
 )
 
 log = logging.getLogger(__name__)
@@ -127,6 +131,67 @@ def stats_endpoint(req: StatsRequest) -> StatsResponse:
         log.exception("stats failed")
         raise HTTPException(status_code=500, detail=str(exc))
     return StatsResponse(**payload)
+
+
+@app.post("/walkforward", response_model=WalkForwardResponse)
+def walkforward_endpoint(req: WalkForwardRequest) -> WalkForwardResponse:
+    """Walk-forward harness (BRIEF Task 7c).
+
+    Loads bars from ClickHouse, sweeps `grid` on each train fold, evaluates
+    the winning combo on the next test window, and returns per-fold IS/OOS
+    Sharpes + the aggregate (mean OOS Sharpe with bootstrap CI, decay slope).
+    """
+    try:
+        payload = services.run_walkforward(
+            tickers=req.tickers,
+            start=req.start,
+            end=req.end,
+            interval=req.interval,
+            strategy=req.strategy,
+            grid=req.grid,
+            train_size=req.train_size,
+            test_size=req.test_size,
+            step=req.step,
+            mode=req.mode,
+            min_train=req.min_train,
+            periods_per_year=req.periods_per_year,
+            commission=req.commission,
+            slippage=req.slippage,
+            n_resamples=req.n_resamples,
+            alpha=req.alpha,
+            seed=req.seed,
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Unknown strategy: {req.strategy}")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        log.exception("walkforward failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+    return WalkForwardResponse(**payload)
+
+
+@app.post("/attribution", response_model=AttributionResponse)
+def attribution_endpoint(req: AttributionRequest) -> AttributionResponse:
+    """Market (CAPM) attribution (BRIEF Task 7c).
+
+    Pure compute — no DB hit. Caller supplies aligned per-bar strategy &
+    market returns; we return alpha / beta / t-stat / R². Child-signal
+    attribution is a Task-4 concern (no combined strategy ships in 7c).
+    """
+    try:
+        payload = services.run_attribution(
+            strategy_returns=req.strategy_returns,
+            market_returns=req.market_returns,
+            risk_free=req.risk_free,
+            periods_per_year=req.periods_per_year,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        log.exception("attribution failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+    return AttributionResponse(**payload)
 
 
 @app.post("/sweep", response_model=SweepResponse)

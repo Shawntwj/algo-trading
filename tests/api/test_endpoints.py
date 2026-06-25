@@ -212,6 +212,85 @@ def test_benchmarks_rejects_bad_weights():
     assert r.status_code == 422
 
 
+def test_attribution_recovers_beta_and_returns_metrics():
+    """`/attribution` is pure compute — synthetic arrays, never skipped."""
+    import numpy as np
+
+    rng = np.random.default_rng(0)
+    n = 600
+    market = rng.normal(0.0, 0.01, size=n).tolist()
+    # strat = 0.8 * market + alpha + noise
+    strat = (
+        0.8 * np.array(market)
+        + 0.0004
+        + rng.normal(0.0, 0.004, size=n)
+    ).tolist()
+    r = client.post(
+        "/attribution",
+        json={
+            "strategy_returns": strat,
+            "market_returns": market,
+            "risk_free": 0.0,
+            "periods_per_year": 252,
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["beta"] == pytest.approx(0.8, abs=0.05)
+    assert body["alpha_t_stat"] > 0
+    assert 0.0 <= body["r_squared"] <= 1.0
+    assert body["n_obs"] == n
+
+
+def test_attribution_rejects_length_mismatch():
+    r = client.post(
+        "/attribution",
+        json={
+            "strategy_returns": [0.0, 0.0, 0.0],
+            "market_returns": [0.0, 0.0],
+        },
+    )
+    assert r.status_code == 422
+
+
+@ch_required
+def test_walkforward_returns_folds_and_aggregate():
+    """Walk-forward over a real bars window; needs ~600+ bars for the default
+    train/test sizes, so we ask for a multi-year range. Falls back to skip if
+    that range is empty for the chosen ticker."""
+    ticker = CH_TICKERS[0]
+    r = client.post(
+        "/walkforward",
+        json={
+            "tickers": [ticker],
+            "start": "2020-01-01",
+            "end": "2024-01-01",
+            "interval": "1d",
+            "strategy": "ma_crossover",
+            "grid": {"fast": [5, 10], "slow": [50, 100]},
+            "train_size": 250,
+            "test_size": 60,
+            "mode": "expanding",
+            "commission": 0.0005,
+            "slippage": 0.0005,
+            "n_resamples": 200,
+            "seed": 7,
+        },
+    )
+    if r.status_code == 422:
+        pytest.skip(f"Not enough bars for {ticker} in the requested range: {r.json()}")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["n_folds"] >= 1
+    assert len(body["folds"]) == body["n_folds"]
+    assert len(body["is_vs_oos"]) == body["n_folds"]
+    for fold in body["folds"]:
+        assert {"fold_idx", "selected_params", "train_start", "test_end"}.issubset(fold)
+        # Each is_vs_oos pair is [IS, OOS] — None or float.
+    for pair in body["is_vs_oos"]:
+        assert len(pair) == 2
+
+
 @ch_required
 def test_sweep_ranks_by_sharpe_desc():
     ticker = CH_TICKERS[0]
