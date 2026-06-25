@@ -9,6 +9,8 @@ from . import services
 from .schemas import (
     BacktestRequest,
     BacktestResponse,
+    BenchmarkRequest,
+    BenchmarkResponse,
     HealthResponse,
     StrategyInfo,
     SweepRequest,
@@ -73,6 +75,32 @@ def backtest(req: BacktestRequest) -> BacktestResponse:
         log.exception("backtest failed")
         raise HTTPException(status_code=500, detail=str(exc))
     return BacktestResponse(**payload)
+
+
+@app.post("/benchmarks", response_model=BenchmarkResponse)
+def benchmarks(req: BenchmarkRequest) -> BenchmarkResponse:
+    """Buy-and-hold benchmark equity curves for the requested universe.
+
+    Used by Task 7d to show strategy returns alongside an equal/cap-weight
+    baseline (and optionally SPY) — never in isolation.
+    """
+    try:
+        payload = services.run_benchmarks(
+            tickers=req.tickers,
+            start=req.start,
+            end=req.end,
+            interval=req.interval,
+            weights=req.weights,
+            caps=req.caps,
+            init_cash=req.init_cash,
+            include_spy=req.include_spy,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        log.exception("benchmarks failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+    return BenchmarkResponse(**payload)
 
 
 @app.post("/sweep", response_model=SweepResponse)

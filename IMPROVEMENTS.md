@@ -9,6 +9,15 @@ Owned by Task 6 once that runs, but populated incrementally by every task.
 ## Strategies
 
 ## Backtest
+- **`buy_and_hold` ignores entry timing of late-listed tickers** — current impl forward-fills NaNs and assumes every ticker starts at the universe's first bar. If a ticker IPOs mid-window we currently buy phantom shares at its first available price; better to defer that ticker's allocation until its first non-NaN bar and rebalance the remainder. — S — `backtest/benchmarks.py::buy_and_hold`.
+- **`random_entry_monte_carlo` uses i.i.d. Bernoulli per (path, bar, ticker)** — this matches *average* exposure but not the *autocorrelation* a real strategy exhibits. Add a block-Bernoulli variant (run lengths drawn from a geometric distribution) so the null distribution's realised vol is closer to a real strategy's. — M — `backtest/benchmarks.py::random_entry_monte_carlo`.
+- **`random_entry_monte_carlo` Sharpe uses fixed 252 annualisation** — fine for daily bars, wrong for intraday. Rigorous annualisation lands in Task 7b's `stats.py`; remove the duplicate here once it does. — S — `backtest/benchmarks.py`.
+- **`buy_and_hold_spy` fetches via the data layer on a miss** — but does so synchronously inside a request. For the FastAPI `/benchmarks` path this can block for several seconds on a cold SPY backfill. Either pre-warm SPY at startup or move the fetch to a background task. — S — `backtest/benchmarks.py::buy_and_hold_spy`, `api/app.py`.
+- **Drawdown thresholds are hand-picked** — `-5% / -15%` for calm/mild/severe is conservative but uncalibrated. After Task 7c walk-forward lands, fit thresholds to historically known regime breaks (2008, 2020, 2022) and document the fit. — M — `backtest/regimes.py`.
+- **Volatility terciles are window-relative, not cross-time-comparable** — a low-vol bar in 2020's input window is not a low-vol bar in 2017's. For cross-period comparisons add an optional `quantiles=` arg using fixed historical quantiles. — S — `backtest/regimes.py::tag_volatility`.
+- **`regime_split.exposure` uses a non-zero-return proxy** — true position-time exposure requires the vectorbt portfolio (`asset_value() != 0`). Add an overload that accepts the BacktestResult directly so the regime split can read the real exposure. — S — `backtest/regime_split.py`.
+- **No `/regimes` endpoint yet** — the regime tags exist server-side but the UI (Task 7d) will have to load + tag client-side or via the existing data endpoints. Expose `POST /regimes` that returns the tag DataFrame for a window. — S — `api/app.py`.
+- **VIX backfill is not auto-triggered** — `buy_and_hold_spy` falls back to YFinance for SPY but `regimes.tag_volatility` callers must backfill `^VIX` themselves. Add a `_ensure_series_in_clickhouse` helper. — S — `data/backfill.py`.
 
 ## Live
 

@@ -131,6 +131,48 @@ def test_backtest_returns_metrics_and_equity_curve():
 
 
 @ch_required
+def test_benchmarks_returns_equity_curve():
+    ticker = CH_TICKERS[0]
+    r = client.post(
+        "/benchmarks",
+        json={
+            "tickers": [ticker],
+            "start": "2022-01-01",
+            "end": "2023-01-01",
+            "interval": "1d",
+            "weights": "equal",
+        },
+    )
+    if r.status_code == 422:
+        pytest.skip(f"No bars for {ticker} in the requested range: {r.json()}")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["weights"] == "equal"
+    assert isinstance(body["curves"], list) and body["curves"]
+    curve = body["curves"][0]
+    assert curve["name"] == "buy_and_hold_equal"
+    assert len(curve["equity_curve"]) > 0
+    pt = curve["equity_curve"][0]
+    assert "timestamp" in pt and "value" in pt
+
+
+def test_benchmarks_rejects_bad_weights():
+    r = client.post(
+        "/benchmarks",
+        json={
+            "tickers": ["AAPL"],
+            "start": "2022-01-01",
+            "end": "2023-01-01",
+            "interval": "1d",
+            "weights": "garbage",
+        },
+    )
+    # Either 422 from our validation or 422 from a downstream ValueError —
+    # both surface as 422 by design.
+    assert r.status_code == 422
+
+
+@ch_required
 def test_sweep_ranks_by_sharpe_desc():
     ticker = CH_TICKERS[0]
     r = client.post(

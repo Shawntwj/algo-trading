@@ -72,3 +72,35 @@ class SweepEntry(BaseModel):
 class SweepResponse(BaseModel):
     strategy: str
     results: list[SweepEntry]
+
+
+# ─── Benchmarks ─────────────────────────────────────────────────────────────
+class BenchmarkRequest(BaseModel):
+    tickers: list[str] = Field(min_length=1)
+    start: str
+    end: str
+    interval: str = "1d"
+    weights: str = Field(
+        default="equal",
+        description="'equal' or 'cap'. 'cap' requires a non-empty `caps` mapping.",
+    )
+    caps: dict[str, float] | None = Field(
+        default=None,
+        description="Optional ticker→market-cap mapping; required when weights='cap'.",
+    )
+    init_cash: float = 100_000.0
+    include_spy: bool = Field(
+        default=False,
+        description="If true, also return the SPY buy-and-hold curve for the same window.",
+    )
+
+
+class BenchmarkCurve(BaseModel):
+    name: str
+    equity_curve: list[EquityPoint]
+
+
+class BenchmarkResponse(BaseModel):
+    weights: str
+    tickers: list[str]
+    curves: list[BenchmarkCurve]

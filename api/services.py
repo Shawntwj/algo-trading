@@ -4,6 +4,7 @@ Keeps HTTP-layer concerns (serialization, error mapping) out of the engine.
 """
 from __future__ import annotations
 
+import logging
 import math
 from typing import Any
 
@@ -11,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from backtest import compare, polars_to_wide, run_backtest, sweep
+from backtest.benchmarks import buy_and_hold, buy_and_hold_spy
 from backtest.engine import BacktestResult
 from backtest.metrics import summarize
 from data import list_tickers, load_bars
@@ -217,6 +219,52 @@ def run_sweep(
         freq=_interval_to_freq(interval),
     )
     return serialize_sweep(results)
+
+
+# ─── Benchmarks ─────────────────────────────────────────────────────────────
+def _curve_to_json(eq_df) -> list[dict[str, Any]]:
+    """polars equity-curve DataFrame -> [{timestamp, value}, ...]."""
+    out: list[dict[str, Any]] = []
+    ts = eq_df["timestamp"].to_list()
+    eq = eq_df["equity"].to_list()
+    for t, v in zip(ts, eq):
+        val = _jsonable(v)
+        if val is None:
+            continue
+        out.append({"timestamp": t.isoformat() if hasattr(t, "isoformat") else str(t), "value": val})
+    return out
+
+
+def run_benchmarks(
+    *,
+    tickers: list[str],
+    start: str,
+    end: str,
+    interval: str,
+    weights: str,
+    caps: dict[str, float] | None = None,
+    init_cash: float = 100_000.0,
+    include_spy: bool = False,
+) -> dict[str, Any]:
+    if weights not in {"equal", "cap"}:
+        raise ValueError(f"weights must be 'equal' or 'cap', got {weights!r}")
+    wide = load_wide(tickers, start, end, interval)
+    eq_df, _ = buy_and_hold(wide, weights=weights, caps=caps, init_cash=init_cash)
+
+    curves = [
+        {
+            "name": f"buy_and_hold_{weights}",
+            "equity_curve": _curve_to_json(eq_df),
+        }
+    ]
+    if include_spy:
+        try:
+            spy_eq, _ = buy_and_hold_spy(start=start, end=end, interval=interval, init_cash=init_cash)
+            curves.append({"name": "buy_and_hold_spy", "equity_curve": _curve_to_json(spy_eq)})
+        except Exception as exc:
+            logging.getLogger(__name__).warning("SPY benchmark unavailable: %s", exc)
+
+    return {"weights": weights, "tickers": tickers, "curves": curves}
 
 
 # ─── Health ─────────────────────────────────────────────────────────────────
