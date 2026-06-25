@@ -1,0 +1,54 @@
+{
+  "as_of": "2026-06-26",
+  "benchmark_means": {
+    "debt_to_equity": 1.1786042307692308,
+    "forward_pe": 23.868569816666664,
+    "log_market_cap": 27.175190482317888,
+    "momentum_12_1": 0.12406607266085697,
+    "pb_ratio": 5.17966627455,
+    "realised_vol_60d": 0.2861509672839656,
+    "roe": 0.4760735669999999
+  },
+  "benchmark_stds": {
+    "debt_to_equity": 1.4678949595776205,
+    "forward_pe": 24.766615156429083,
+    "log_market_cap": 1.0560194197616413,
+    "momentum_12_1": 0.2514261045910538,
+    "pb_ratio": 34.91400681619002,
+    "realised_vol_60d": 0.10459892478601404,
+    "roe": 0.521329360497076
+  },
+  "holdings": [
+    "CMG",
+    "HLT",
+    "QSR",
+    "LOW",
+    "GOOG",
+    "GOOGL",
+    "CP",
+    "BN",
+    "UBER",
+    "NKE",
+    "HHH"
+  ],
+  "n_holdings_with_data": 11,
+  "name": "pershing_square",
+  "picker_means": {
+    "debt_to_equity": 1.1612744444444443,
+    "forward_pe": 24.741479763636367,
+    "log_market_cap": 25.497142568806836,
+    "momentum_12_1": 0.1118486414570917,
+    "pb_ratio": 2.764901690909091,
+    "realised_vol_60d": 0.3139234501361026,
+    "roe": 0.2455633244444444
+  },
+  "profile": {
+    "debt_to_equity": -0.011805876307234616,
+    "forward_pe": 0.0352454278251708,
+    "log_market_cap": -1.58903130199046,
+    "momentum_12_1": -0.04859253267928165,
+    "pb_ratio": -0.0691632042221277,
+    "realised_vol_60d": 0.26551403763426146,
+    "roe": -0.4421585662003941
+  }
+}

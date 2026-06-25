@@ -1,0 +1,50 @@
+{
+  "as_of": "2026-06-26",
+  "benchmark_means": {
+    "debt_to_equity": 1.1786042307692308,
+    "forward_pe": 23.866225949999997,
+    "log_market_cap": 27.175162423976154,
+    "momentum_12_1": 0.12406607266085697,
+    "pb_ratio": 5.177201927738667,
+    "realised_vol_60d": 0.2861622013370205,
+    "roe": 0.4760735669999999
+  },
+  "benchmark_stds": {
+    "debt_to_equity": 1.4678949595776205,
+    "forward_pe": 24.752202514116142,
+    "log_market_cap": 1.056121867331714,
+    "momentum_12_1": 0.2514261045910538,
+    "pb_ratio": 34.924530536862484,
+    "realised_vol_60d": 0.10461981608193169,
+    "roe": 0.521329360497076
+  },
+  "holdings": [
+    "BABA",
+    "JD",
+    "PDD",
+    "BAC",
+    "REAL",
+    "MOH",
+    "OLPX"
+  ],
+  "n_holdings_with_data": 7,
+  "name": "scion",
+  "picker_means": {
+    "debt_to_equity": 0.6427579999999999,
+    "forward_pe": 19.079125100000002,
+    "log_market_cap": 23.975923652857777,
+    "momentum_12_1": 0.12223449491077414,
+    "pb_ratio": 0.8088503714285713,
+    "realised_vol_60d": 0.3828358692504434,
+    "roe": 0.09006166566666667
+  },
+  "profile": {
+    "debt_to_equity": -0.365043988517692,
+    "forward_pe": -0.19340100531538226,
+    "log_market_cap": -3.0292325820326362,
+    "momentum_12_1": -0.007284755706102607,
+    "pb_ratio": -0.12507975022597215,
+    "realised_vol_60d": 0.9240473892413852,
+    "roe": -0.7404376783330973
+  }
+}

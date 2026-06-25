@@ -1,0 +1,58 @@
+{
+  "as_of": "2026-06-26",
+  "benchmark_means": {
+    "debt_to_equity": 1.1786042307692308,
+    "forward_pe": 23.873611233333335,
+    "log_market_cap": 27.175350341333328,
+    "momentum_12_1": 0.12406607266085697,
+    "pb_ratio": 5.17943675719,
+    "realised_vol_60d": 0.2861564264498585,
+    "roe": 0.4760735669999999
+  },
+  "benchmark_stds": {
+    "debt_to_equity": 1.4678949595776205,
+    "forward_pe": 24.779402464449518,
+    "log_market_cap": 1.0560209828919882,
+    "momentum_12_1": 0.2514261045910538,
+    "pb_ratio": 34.92172110127153,
+    "realised_vol_60d": 0.10460410046845176,
+    "roe": 0.521329360497076
+  },
+  "holdings": [
+    "BABA",
+    "AMZN",
+    "META",
+    "MSFT",
+    "GOOGL",
+    "GOOG",
+    "ORCL",
+    "FXI",
+    "PDD",
+    "KWEB",
+    "UBER",
+    "BIDU",
+    "JD",
+    "LRCX",
+    "MU"
+  ],
+  "n_holdings_with_data": 15,
+  "name": "appaloosa",
+  "picker_means": {
+    "debt_to_equity": 0.6639153846153847,
+    "forward_pe": 16.48727048666667,
+    "log_market_cap": 26.973219573459435,
+    "momentum_12_1": 0.8739156555481635,
+    "pb_ratio": 8.93430542857143,
+    "realised_vol_60d": 0.4242556994210786,
+    "roe": 0.31169922799999994
+  },
+  "profile": {
+    "debt_to_equity": -0.3506305698480941,
+    "forward_pe": -0.29808389275180025,
+    "log_market_cap": -0.19140790869547253,
+    "momentum_12_1": 2.9823855566109247,
+    "pb_ratio": 0.10752244027413388,
+    "realised_vol_60d": 1.3202089817967544,
+    "roe": -0.3152984494164547
+  }
+}

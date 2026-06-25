@@ -1,0 +1,58 @@
+{
+  "as_of": "2026-06-26",
+  "benchmark_means": {
+    "debt_to_equity": 1.1786042307692308,
+    "forward_pe": 23.8718629,
+    "log_market_cap": 27.175235495748055,
+    "momentum_12_1": 0.12406607266085697,
+    "pb_ratio": 5.182107993634667,
+    "realised_vol_60d": 0.28615739680422314,
+    "roe": 0.4760735669999999
+  },
+  "benchmark_stds": {
+    "debt_to_equity": 1.4678949595776205,
+    "forward_pe": 24.7815774390123,
+    "log_market_cap": 1.05612996712616,
+    "momentum_12_1": 0.2514261045910538,
+    "pb_ratio": 34.90214037518686,
+    "realised_vol_60d": 0.10458252129513308,
+    "roe": 0.521329360497076
+  },
+  "holdings": [
+    "AAPL",
+    "BAC",
+    "AXP",
+    "KO",
+    "CVX",
+    "OXY",
+    "MCO",
+    "KHC",
+    "DVA",
+    "C",
+    "VRSN",
+    "AMZN",
+    "V",
+    "MA",
+    "AON"
+  ],
+  "n_holdings_with_data": 15,
+  "name": "berkshire",
+  "picker_means": {
+    "debt_to_equity": 2.1275716666666664,
+    "forward_pe": 18.161157100000004,
+    "log_market_cap": 25.984894939842267,
+    "momentum_12_1": 0.12729662797069374,
+    "pb_ratio": 10.336310776666666,
+    "realised_vol_60d": 0.2717588953561777,
+    "roe": 0.5365492828571429
+  },
+  "profile": {
+    "debt_to_equity": 0.6464818410238947,
+    "forward_pe": -0.23044157758133427,
+    "log_market_cap": -1.1270777205052036,
+    "momentum_12_1": 0.012848925592238311,
+    "pb_ratio": 0.14767583671448128,
+    "realised_vol_60d": -0.13767598323062707,
+    "roe": 0.11600289651724334
+  }
+}
