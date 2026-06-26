@@ -49,8 +49,7 @@ Open <http://localhost:5173>. Ctrl-C tears both servers down.
 `make test` runs `pytest` + the Vitest frontend smoke test.
 
 > The legacy **Streamlit dashboard** in `dashboard/app.py` is **deprecated** —
-> the React SPA above replaces it. The file is kept for reference until the
-> live-runner task ships.
+> the React SPA above replaces it. Kept for reference; do not extend.
 
 ```
 algo-trading/
@@ -60,7 +59,7 @@ algo-trading/
 ├── strategies/       Strategy ABC + ma_crossover + rsi_mean_reversion
 ├── backtest/         vectorbt engine, metrics, parameter sweeps
 ├── dashboard/        Streamlit UI
-├── execution/        Paper/live STUB (interface only — not wired)
+├── execution/        Broker ABC + IBKR + Alpaca adapters + live_runner + risk/kill
 ├── scripts/          CLI entry points
 └── tests/            pytest
 ```
@@ -237,6 +236,151 @@ on a real bull market) the demo will warn instead:
 — this is *also* expected behaviour. The honest gauntlet doesn't manufacture
 overfit signals; it surfaces them when they exist.
 
+## 8. Live trading (paper or real money)
+
+The live runner (`execution/live_runner.py`) is a long-running process that
+polls ClickHouse for new bars, asks the configured strategy for a target
+position per ticker, diffs against the broker's actual positions, runs every
+order through a risk gate, and submits via the configured broker adapter
+(IBKR via `ib_insync` or Alpaca via `alpaca-py`). Every decision and every
+order is written to two ClickHouse audit tables (`decisions`, `orders`)
+created by:
+
+```bash
+python -m execution.migrate
+```
+
+Config lives at `config/live.yaml` — broker, paper flag, tickers, rebalance
+cadence, risk caps, broker-credential **env-var names** (never the secrets
+themselves), and the kill-switch flag-file path.
+
+### ⚠ **LIVE TRADING WARNING**
+
+> **This software can place real orders against real money.** Read this
+> section twice before flipping `paper: false`. Bugs, network glitches, bad
+> bars, stale positions, and overfit strategies all cost real cash in live
+> mode. **The author and Claude take zero responsibility for losses.** You
+> are the broker of record; you wear every fill.
+>
+> **Defaults are paper.** The runner refuses to start in live mode unless
+> you set `ALGO_LIVE_CONFIRMED=yes` in the environment — this is the BRIEF's
+> "never run live orders without my explicit go-live confirmation" rule, enforced.
+>
+> **Before going live, you must:**
+> 1. Run on paper for at least a week, watching the IBKR / Alpaca client
+>    portal to confirm orders land as expected.
+> 2. Tighten `risk.max_position_usd`, `risk.max_daily_loss_usd`,
+>    `risk.max_gross_exposure_usd`, and `risk.max_order_notional_usd` in
+>    `config/live.yaml` to amounts you are prepared to lose **today**.
+> 3. Know how to flip the kill switch (below) without typing.
+> 4. Confirm `ALGO_LIVE_CONFIRMED=yes` is only set in the live shell — never
+>    export it from `.zshrc`.
+
+### Getting IBKR paper credentials
+
+1. Open a free **paper trading account** at
+   <https://www.interactivebrokers.com/en/trading/free-demo.php>.
+   Account approval is automatic for paper.
+2. Download **Trader Workstation (TWS)** or **IB Gateway** from
+   <https://www.interactivebrokers.com/en/trading/tws.php>. Install and log
+   in with your paper credentials.
+3. In TWS: `File → Global Configuration → API → Settings`:
+   * **Enable ActiveX and Socket Clients** ✓
+   * **Read-Only API** ✗ (uncheck — we need to place orders)
+   * **Socket port**: `7497` for TWS paper (default; live=7496, Gateway
+     paper=4002, Gateway live=4001).
+   * **Trusted IP Addresses**: add `127.0.0.1`.
+4. Leave TWS running. The live runner talks to it over the socket — no
+   IBKR creds touch the runner's environment.
+
+### Getting Alpaca paper credentials
+
+1. Sign up at <https://app.alpaca.markets/signup> (free).
+2. Switch to the **Paper** tab in the top-right dashboard.
+3. **API Keys → Generate New Key** → copy the key id + secret.
+4. Export them in the shell that will run the live runner:
+   ```bash
+   export ALPACA_API_KEY=PK...
+   export ALPACA_SECRET_KEY=...
+   ```
+
+### Launching the runner
+
+One-shot acceptance test (the BRIEF's smoke check — runs one iteration and
+exits):
+
+```bash
+# Paper, IBKR (TWS must be running on 7497)
+python -m execution.live_runner --strategy combined_explainable --broker ibkr --paper --once
+
+# Paper, Alpaca (env vars set as above)
+python -m execution.live_runner --strategy combined_explainable --broker alpaca --paper --once
+```
+
+Long-running poll loop (`rebalance_seconds` from `config/live.yaml`):
+
+```bash
+python -m execution.live_runner --strategy combined_explainable --broker alpaca --paper
+# Ctrl-C / SIGTERM → graceful shutdown after the in-flight iteration.
+```
+
+After a run, inspect the audit tables:
+
+```sql
+SELECT decided_at, ticker, target_position, current_position, diff_qty,
+       risk_blocked, risk_reason
+FROM decisions
+ORDER BY decided_at DESC
+LIMIT 20;
+
+SELECT submitted_at, ticker, side, qty, broker_order_id, status
+FROM orders
+ORDER BY submitted_at DESC
+LIMIT 20;
+```
+
+### Flipping from paper to live
+
+```bash
+# 1. In config/live.yaml:
+#       paper: false
+#       broker: ibkr   # or alpaca
+#       # tighten the risk caps!
+# 2. (IBKR) point TWS at the live port (7496 / 4001) and log in with a LIVE login.
+# 3. In the shell:
+export ALGO_LIVE_CONFIRMED=yes
+python -m execution.live_runner --strategy combined_explainable --broker ibkr --live
+```
+
+If `ALGO_LIVE_CONFIRMED` is missing, the runner prints a loud banner and
+exits with code 2. There is no `--force` flag.
+
+### Kill switch
+
+Two sources, OR'd together — either halts the runner:
+
+* **File flag**: presence of the file at `kill_switch_file` (default
+  `config/.kill_switch`) halts new orders mid-loop. The runner finishes the
+  current iteration (no orders submitted) and writes a sentinel `decisions`
+  row per ticker so the halt is auditable.
+  ```bash
+  touch config/.kill_switch     # halts
+  rm    config/.kill_switch     # resumes on the next poll
+  ```
+  `config/.kill_switch` is in `.gitignore` so it never ends up in a commit.
+
+* **Env var**: `ALGO_KILL=1` (or `yes` / `true` / `on`) in the runner's
+  environment. Useful when launching from systemd / launchd. Cleared by
+  unsetting the var and restarting.
+
+  ```bash
+  # Override the flag-file path too if you like:
+  export ALGO_KILL_FLAG_PATH=/var/run/algo-trading/kill
+  ```
+
+To stop the runner entirely (rather than just halting orders): SIGINT
+(Ctrl-C) or SIGTERM. The loop finishes the current iteration then exits.
+
 ## Architecture notes
 
 - **Polars in the data layer**; conversion to pandas happens only at the
@@ -249,5 +393,9 @@ overfit signals; it surfaces them when they exist.
   downstream.
 - **Dagster** wraps the plain backfill functions; the platform works without
   it. The schedule is just `update_latest(...)` on a cron.
-- **Execution** is a *stub*. No live orders. The interface is there so you can
-  plug in a paper broker later.
+- **Execution** ships paper + live adapters for IBKR (via `ib_insync`) and
+  Alpaca (via `alpaca-py`) behind a single `Broker` ABC, plus a long-running
+  `execution/live_runner.py` with risk caps (`RiskGate`), a kill switch
+  (env var **and** file flag), and ClickHouse audit tables (`orders`,
+  `decisions`). See **§8 Live trading** for the warning, credentials howto,
+  and paper-to-live flip.
