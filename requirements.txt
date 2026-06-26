@@ -4,7 +4,6 @@ numpy>=1.26.0
 clickhouse-connect>=0.7.0
 yfinance>=0.2.40
 vectorbt>=0.26.0
-pandas-ta>=0.3.14b
 dagster>=1.7.0
 dagster-webserver>=1.7.0
 streamlit>=1.32.0
