@@ -44,7 +44,14 @@ class YFinanceSource(DataSource):
 
         if len(tickers) == 1:
             ticker = tickers[0]
-            df = raw.reset_index()
+            df = raw.copy()
+            # yfinance 0.2+ returns MultiIndex columns even for n=1 in some
+            # versions; flatten by dropping whichever level holds the ticker.
+            if df.columns.nlevels > 1:
+                level_0 = df.columns.get_level_values(0)
+                drop = 0 if ticker in set(level_0) else -1
+                df.columns = df.columns.droplevel(drop)
+            df = df.reset_index()
             df.columns = [c.lower() if isinstance(c, str) else c for c in df.columns]
             frames.append(_to_polars(df, ticker, interval))
         else:
