@@ -1,0 +1,46 @@
+# Live runner config (Task 5b). See README → Live Trading.
+#
+# SAFETY:
+#   * paper: true is the default. Flipping to false requires the env var
+#     ALGO_LIVE_CONFIRMED=yes — the runner exits 2 otherwise.
+#   * No credentials are stored here. Broker keys are env-var NAMES that the
+#     runner resolves at broker-construction time:
+#         export ALPACA_API_KEY=...    export ALPACA_SECRET_KEY=...
+#     IBKR connects to your already-running TWS / Gateway — no creds in env.
+#
+# Risk caps are USD and per-account. Tighten before going live.
+
+broker: ibkr              # ibkr | alpaca
+paper: true
+strategy: combined_explainable
+tickers: [AAPL, MSFT, GOOGL, AMZN]
+rebalance_seconds: 300
+
+# History length the strategy gets at each iteration (calendar days).
+# combined_explainable's z-score window is 252 bars (≈ 1y of trading days);
+# we ask for 365 calendar days to safely cover that.
+lookback_days: 365
+interval: "1d"
+
+risk:
+  max_position_usd: 25000
+  max_daily_loss_usd: 1000
+  max_gross_exposure_usd: 100000
+  max_order_notional_usd: 5000
+
+broker_credentials:
+  ibkr:
+    host: 127.0.0.1
+    port: 7497           # TWS paper. Live=7496, Gateway paper=4002, Gateway live=4001
+    client_id: 7
+    gateway: false       # set true if you run IB Gateway instead of TWS
+  alpaca:
+    # The runner reads these env-var NAMES and pulls the actual creds at runtime.
+    api_key_env: ALPACA_API_KEY
+    secret_key_env: ALPACA_SECRET_KEY
+
+# Kill-switch file path. Touch this file to halt new orders mid-loop:
+#     touch config/.kill_switch        # halts
+#     rm    config/.kill_switch        # resumes
+# Or set ALGO_KILL=1 in the runner's environment.
+kill_switch_file: config/.kill_switch

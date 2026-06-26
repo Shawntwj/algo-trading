@@ -21,3 +21,6 @@ reports/output/
 scripts/loop_resume_*.log
 scripts/loop_resume.stdout.log
 scripts/loop_resume.stderr.log
+
+# Live-runner kill-switch flag file (presence halts trading; never commit)
+config/.kill_switch
