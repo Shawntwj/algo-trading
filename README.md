@@ -48,6 +48,13 @@ Open <http://localhost:5173>. Ctrl-C tears both servers down.
 
 `make test` runs `pytest` + the Vitest frontend smoke test.
 
+`python scripts/audit.py` prints a one-screen summary of the platform's
+current state — rows-per-ticker in ClickHouse, registered strategies,
+test counts, API routes, frontend components, recent reports, and the
+size of the `IMPROVEMENTS.md` backlog. Use `--json` for a
+machine-readable form (handy in cron). The script complements
+`IMPROVEMENTS.md`: backlog vs current state.
+
 > The legacy **Streamlit dashboard** in `dashboard/app.py` is **deprecated** —
 > the React SPA above replaces it. Kept for reference; do not extend.
 
