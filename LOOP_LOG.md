@@ -126,3 +126,34 @@ Format: `## YYYY-MM-DDTHH:MM:SSZ — Task <id> [<status>]`
 - Commits: faa2f48 (schema+migrate), 2d6db7b (risk), 7ca06d7 (kill_switch), 5eaa50d (live_runner), 06ddcfa (live.yaml+gitignore), 5ad7367 (tests), 2ed582b (README).
 - Cut for scope: no websocket bar feed (poll-only); no fractional-share targets (Alpaca-capable, we floor to int); no order-status reconciliation loop (orders.status frozen at 'submitted' after write); no daily-PnL feed wired into `RiskGate.record_pnl` (cap is dormant in live use); no UI for the live runner; no Slack/email alerting on kill or risk-block; no concurrent multi-strategy execution; schema migrations are one-shot rather than versioned; ClickHouse tests share a tmp DB across cases (`>=` rather than `==` counts); no end-to-end paper test in CI. All ten cuts logged in IMPROVEMENTS.md (Live + Tests sections).
 - Smoke: `python -m execution.live_runner --help` → exit 0 (clean usage). `python -m execution.live_runner --strategy combined_explainable --broker alpaca --paper --once` → exits non-zero with a clear `BrokerError: AlpacaBroker requires credentials — set ALPACA_API_KEY and ALPACA_SECRET_KEY env vars` (expected behaviour with no creds in env; documented in task verification). The CLI live-mode confirmation gate is end-to-end smoke-tested (a subprocess test in `tests/execution/test_live_runner.py::test_cli_live_without_confirmation_exits_2` runs `python -m execution.live_runner --config <tmp> --once` with `paper: false` and no `ALGO_LIVE_CONFIRMED` → exit 2 with `REFUSING TO RUN LIVE` banner — passes). Audit DB writes verified against the real local ClickHouse via tmp-DB tests (`test_run_once_writes_audit_rows` + `test_run_once_blocked_order_logs_decision_only`).
+
+## 2026-06-26T00:18:00Z — Task 6 [success]
+- Summary: Shipped the continuous-improvement deliverables. `scripts/audit.py` is a self-contained CLI (with `--json` mode for automation) that prints platform state in a single screen — ClickHouse per-ticker row counts + last-bar timestamps (top 20, then `...and N more`), registered-strategy count + list (introspects `strategies.REGISTRY`), test file + collected count (uses `pytest --collect-only -q` to stay under the 10s budget; full `pytest -q` is documented as a separate command for pass rate), API route count + path list (introspects `api.app.app.routes`, filters out `/docs` / `/openapi.json`), frontend `.tsx` component count + `dist/` freshness, HTML reports under `reports/output/` + most-recent timestamp, and `IMPROVEMENTS.md` entries per section. ClickHouse degrades gracefully with a clear `docker compose up -d` hint when unreachable. `tests/scripts/test_audit.py` is a 3-test smoke suite (human run, JSON validity, data-section shape) that runs the CLI as a subprocess. `IMPROVEMENTS.md` got a single cleanup pass: added a preamble explaining its purpose + audit.py complementarity; reordered to BRIEF Task 6 ordering (Data / Strategies / Backtest / Live / UX / Tests / Reports / Infra / Repo); sorted each section by effort (S → M → L) with alphabetical title tiebreak; merged the two "PriceChart plots equity, not raw price" entries (Tasks 1c + 4b) into one; added 7 NEW entries noticed during the end-to-end read (audit.py current-snapshot-only, no CI workflow, no coverage instrumentation, no LICENSE, no Dockerfile for FastAPI, requirements.txt is `>=`-only, no intraday data layer). README got a one-paragraph note under quickstart pointing at `python scripts/audit.py`.
+- Commits: 9752825 (audit.py), 8e81ee4 (audit tests), a43fcda (IMPROVEMENTS cleanup), 9fa1258 (README mention), <this rollup SHA>
+- Cut for scope: audit.py is current-snapshot only — no historical drift graph (would need a `reports/audit_history.ndjson` cron append + a tiny trend chart); test pass rate is not reported (audit prints "Run `pytest -q` for pass rate" because a full pytest run is ~50s on this repo and would blow the 10s budget — the BRIEF explicitly listed this as an acceptable trade-off); coverage instrumentation not added (logged); CI workflow not added (logged); LICENSE not added (logged). All five cuts are themselves logged in `IMPROVEMENTS.md` Infra / Repo.
+- Verification: `pytest -q` → 239 passed, 2 deselected (~50s). `python scripts/audit.py` → finishes in 9.1s end-to-end (well under the 30s budget). `python scripts/audit.py --json | python -m json.tool` → parses cleanly. IMPROVEMENTS.md after cleanup: 129 entries across 8 sections (Backtest 25, UX 24, Strategies 20, Live 20, Tests 14, Data 11, Reports 8, Infra/Repo 7).
+- audit.py output (truncated, first ~20 lines):
+  ```
+  algo-trading platform audit — 2026-06-26T00:15:49.149621+00:00
+
+  Data (ClickHouse `bars`)
+  ========================
+    tickers backfilled.............. 25
+    total rows...................... 38,128
+    META............................    1,756 rows, last=2024-12-29T16:00:00
+    SCHD............................    1,756 rows, last=2024-12-29T16:00:00
+    V...............................    1,756 rows, last=2024-12-29T16:00:00
+    AMZN............................    1,756 rows, last=2024-12-29T16:00:00
+    TLT.............................    1,756 rows, last=2024-12-29T16:00:00
+    JPM.............................    1,756 rows, last=2024-12-29T16:00:00
+    XLK.............................    1,756 rows, last=2024-12-29T16:00:00
+    VGT.............................    1,756 rows, last=2024-12-29T16:00:00
+    VYM.............................    1,756 rows, last=2024-12-29T16:00:00
+    SPYG............................    1,756 rows, last=2024-12-29T16:00:00
+    VUG.............................    1,756 rows, last=2024-12-29T16:00:00
+    SPY.............................    1,756 rows, last=2024-12-29T16:00:00
+    XLP.............................    1,756 rows, last=2024-12-29T16:00:00
+    JNJ.............................    1,756 rows, last=2024-12-29T16:00:00
+  ```
+
+ALL TASKS COMPLETE
